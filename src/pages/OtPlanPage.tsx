@@ -159,7 +159,7 @@ ${html}
           <CardContent className="py-16 text-center space-y-3">
             <Building2 className="h-12 w-12 text-muted-foreground/40 mx-auto" />
             <p className="font-medium text-foreground">Select a department</p>
-            <p className="text-sm text-muted-foreground">Choose a department and date to generate the OT plan.</p>
+            <p className="text-sm text-muted-foreground">Choose a department to load employees for the OT plan.</p>
           </CardContent>
         </Card>
       ) : loading ? (
