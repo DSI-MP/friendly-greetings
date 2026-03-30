@@ -251,7 +251,7 @@ export default function RequestCreatePage() {
               <Input
                 id="dept"
                 disabled
-                value={user?.departmentId ? `Department ${user.departmentId}` : 'Your Department'}
+                value={departmentName || (user?.departmentId ? `Department #${user.departmentId}` : 'Your Department')}
                 className="mt-1.5"
               />
             </div>

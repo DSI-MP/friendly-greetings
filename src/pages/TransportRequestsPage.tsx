@@ -34,7 +34,7 @@ export default function TransportRequestsPage() {
   ];
 
   const getDeptName = (req: any) =>
-    req.department?.name || `Dept ${req.department_id}`;
+    req.department_name || req.department?.name || '—';
 
   return (
     <div className="space-y-6">

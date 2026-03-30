@@ -188,6 +188,12 @@ export class TransportRequestsService {
       throw new BadRequestException(`Department #${data.departmentId} not found`);
     }
 
+    // Enforce daily lock: reject creation if the selected date is locked
+    const dailyLock = await this.dailyRunRepo.findOne({ where: { run_date: data.requestDate as any } });
+    if (dailyLock && [DailyRunStatus.LOCKED, DailyRunStatus.GROUPED, DailyRunStatus.ASSIGNING, DailyRunStatus.READY, DailyRunStatus.SUBMITTED_TO_HR, DailyRunStatus.HR_APPROVED, DailyRunStatus.DISPATCHED, DailyRunStatus.CLOSED].includes(dailyLock.status)) {
+      throw new BadRequestException(`Cannot create a request for ${data.requestDate} — the daily run is locked.`);
+    }
+
     const request = this.reqRepo.create({
       department_id: data.departmentId,
       request_date: data.requestDate as any,
