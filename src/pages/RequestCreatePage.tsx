@@ -42,6 +42,23 @@ export default function RequestCreatePage() {
   const [placesLoading, setPlacesLoading] = useState(true);
   const [existingRequestLoaded, setExistingRequestLoaded] = useState(!isEditMode);
   const [existingStatus, setExistingStatus] = useState<string>('');
+  const [departmentName, setDepartmentName] = useState<string>('');
+
+  // Resolve department name
+  useEffect(() => {
+    if (!user?.departmentId) return;
+    (async () => {
+      try {
+        const res = await api.get('/public/departments');
+        const depts = res.data?.data ?? res.data;
+        const items = Array.isArray(depts) ? depts : depts?.items || [];
+        const dept = items.find((d: any) => d.id === user.departmentId);
+        if (dept) setDepartmentName(dept.name);
+      } catch {
+        // silent — fallback to empty
+      }
+    })();
+  }, [user?.departmentId]);
 
   // Daily lock for selected date
   const { isLocked, loading: lockLoading } = useDailyLock(requestDate);
