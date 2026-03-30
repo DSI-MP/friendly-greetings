@@ -16,7 +16,7 @@ export class DepartmentsController {
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth()
-  @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.HR)
+  @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.HR, AppRole.PLANNING)
   findAll(@Query() query: PaginationDto) {
     return this.service.findAll(query);
   }

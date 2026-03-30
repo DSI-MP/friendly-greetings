@@ -93,7 +93,7 @@ export class TransportRequestsService {
 
     const enriched = items.map(r => ({
       ...r,
-      department_name: r.department?.name || `Department ${r.department_id}`,
+      department_name: r.department?.name || null,
       employee_count: empCounts.get(r.id) || 0,
     }));
 
@@ -164,7 +164,7 @@ export class TransportRequestsService {
 
     return {
       ...req,
-      department_name: req.department?.name || `Department ${req.department_id}`,
+      department_name: req.department?.name || null,
       created_by_name: userMap.get(req.created_by_user_id) || 'Unknown',
       employee_count: employees.length,
       employees,
@@ -186,6 +186,12 @@ export class TransportRequestsService {
     const dept = await this.deptRepo.findOne({ where: { id: data.departmentId } });
     if (!dept) {
       throw new BadRequestException(`Department #${data.departmentId} not found`);
+    }
+
+    // Enforce daily lock: reject creation if the selected date is locked
+    const dailyLock = await this.dailyRunRepo.findOne({ where: { run_date: data.requestDate as any } });
+    if (dailyLock && [DailyRunStatus.LOCKED, DailyRunStatus.GROUPED, DailyRunStatus.ASSIGNING, DailyRunStatus.READY, DailyRunStatus.SUBMITTED_TO_HR, DailyRunStatus.HR_APPROVED, DailyRunStatus.DISPATCHED, DailyRunStatus.CLOSED].includes(dailyLock.status)) {
+      throw new BadRequestException(`Cannot create a request for ${data.requestDate} — the daily run is locked.`);
     }
 
     const request = this.reqRepo.create({

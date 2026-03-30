@@ -61,7 +61,7 @@ export default function OtPlanPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDeptId, date]);
+  }, [selectedDeptId]);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
@@ -169,7 +169,7 @@ ${html}
           <CardContent className="py-12 text-center space-y-2">
             <Users className="h-10 w-10 text-muted-foreground/40 mx-auto" />
             <p className="font-medium text-foreground">No employees found</p>
-            <p className="text-sm text-muted-foreground">No employees found for this department.</p>
+            <p className="text-sm text-muted-foreground">No employees are registered in this department. Check department assignments or contact an administrator.</p>
           </CardContent>
         </Card>
       ) : (

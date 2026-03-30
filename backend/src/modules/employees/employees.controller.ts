@@ -30,7 +30,7 @@ export class EmployeesController {
   @Get()
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth()
-  @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.HOD, AppRole.HR)
+  @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.HOD, AppRole.HR, AppRole.PLANNING)
   findAll(@Query() query: ListEmployeesDto, @CurrentUser() user: any) {
     const deptId = user.role === AppRole.HOD
       ? Number(user.departmentId) || undefined

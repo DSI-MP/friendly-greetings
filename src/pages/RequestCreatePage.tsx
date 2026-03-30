@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Save, Send, Loader2, Clock, ShieldAlert } from 'lucide-react';
 import type { WorkflowEmployee } from '@/types/workflow';
+import api from '@/lib/api';
 
 export default function RequestCreatePage() {
   const { id } = useParams<{ id: string }>();
@@ -41,6 +42,23 @@ export default function RequestCreatePage() {
   const [placesLoading, setPlacesLoading] = useState(true);
   const [existingRequestLoaded, setExistingRequestLoaded] = useState(!isEditMode);
   const [existingStatus, setExistingStatus] = useState<string>('');
+  const [departmentName, setDepartmentName] = useState<string>('');
+
+  // Resolve department name
+  useEffect(() => {
+    if (!user?.departmentId) return;
+    (async () => {
+      try {
+        const res = await api.get('/public/departments');
+        const depts = res.data?.data ?? res.data;
+        const items = Array.isArray(depts) ? depts : depts?.items || [];
+        const dept = items.find((d: any) => d.id === user.departmentId);
+        if (dept) setDepartmentName(dept.name);
+      } catch {
+        // silent — fallback to empty
+      }
+    })();
+  }, [user?.departmentId]);
 
   // Daily lock for selected date
   const { isLocked, loading: lockLoading } = useDailyLock(requestDate);
@@ -233,7 +251,7 @@ export default function RequestCreatePage() {
               <Input
                 id="dept"
                 disabled
-                value={user?.departmentId ? `Department ${user.departmentId}` : 'Your Department'}
+                value={departmentName || (user?.departmentId ? `Department #${user.departmentId}` : 'Your Department')}
                 className="mt-1.5"
               />
             </div>
