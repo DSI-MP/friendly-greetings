@@ -153,6 +153,7 @@ export class ReportsController {
       case 'cost-summary': return this.costSummary(date);
       case 'exception': return this.exceptionReport(date);
       case 'archive': return this.archiveReport();
+      case 'ot-plan': return this.otPlan(date);
       default: return { rows: [], meta: this.buildMeta(null, null, date) };
     }
   }
@@ -631,5 +632,125 @@ export class ReportsController {
   @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.TRANSPORT_AUTHORITY, AppRole.HR)
   async printReport(@Param('date') date: string, @Param('type') type: string) {
     return this.getReport(type, date);
+  }
+
+  // ── OT Plan (final approved, grouped by department) ──
+
+  private async otPlan(date?: string) {
+    const { run, dailyRun, groups } = await this.resolveRunFromDate(date);
+    const meta = this.buildMeta(run, dailyRun, date);
+
+    // OT plan is only available after HR approval
+    const readyStatuses = ['HR_APPROVED', 'DISPATCHED', 'CLOSED'];
+    if (!dailyRun || !readyStatuses.includes(dailyRun.status)) {
+      return {
+        rows: [],
+        meta: {
+          ...meta,
+          title: 'Final OT Plan',
+          readiness: dailyRun ? meta.readiness : 'unavailable',
+          totalDepartments: 0,
+          totalEmployees: 0,
+        },
+      };
+    }
+
+    // Collect request employees from HR_APPROVED (or DISPATCHED/CLOSED) requests for this date
+    const requests = await this.reqRepo.find({
+      where: { request_date: date as any, status: In(readyStatuses.map(s => s as any)) },
+      relations: ['department'],
+    });
+
+    if (requests.length === 0) {
+      return {
+        rows: [],
+        meta: { ...meta, title: 'Final OT Plan', totalDepartments: 0, totalEmployees: 0 },
+      };
+    }
+
+    const requestIds = requests.map(r => r.id);
+    const allReqEmps = await this.reqEmpRepo.find({
+      where: { request_id: In(requestIds) },
+    });
+
+    // Collect unique employee IDs
+    const empIdSet = new Set<number>();
+    for (const re of allReqEmps) empIdSet.add(re.employee_id);
+    const empIds = [...empIdSet];
+
+    if (empIds.length === 0) {
+      return {
+        rows: [],
+        meta: { ...meta, title: 'Final OT Plan', totalDepartments: 0, totalEmployees: 0 },
+      };
+    }
+
+    // Batch load employees
+    const empMap = await this.batchLoadEmployees(empIds);
+
+    // Build department map from requests
+    const deptNameMap = new Map<number, string>();
+    for (const req of requests) {
+      if (req.department_id && req.department?.name) {
+        deptNameMap.set(req.department_id, req.department.name);
+      }
+    }
+
+    // If any employee department isn't covered, batch-load those departments
+    const missingDeptIds: number[] = [];
+    for (const emp of empMap.values()) {
+      if (emp.department_id && !deptNameMap.has(emp.department_id)) {
+        missingDeptIds.push(emp.department_id);
+      }
+    }
+    if (missingDeptIds.length > 0) {
+      const depts = await this.deptRepo.findByIds([...new Set(missingDeptIds)]);
+      for (const d of depts) deptNameMap.set(d.id, d.name);
+    }
+
+    // Map each request employee to their department
+    const deptGroups = new Map<number, { departmentName: string; employees: Map<number, { employeeId: number; empNo: string; fullName: string }> }>();
+
+    for (const re of allReqEmps) {
+      const emp = empMap.get(re.employee_id);
+      if (!emp) continue;
+      const deptId = emp.department_id;
+      if (!deptGroups.has(deptId)) {
+        deptGroups.set(deptId, {
+          departmentName: deptNameMap.get(deptId) || `Department #${deptId}`,
+          employees: new Map(),
+        });
+      }
+      const group = deptGroups.get(deptId)!;
+      if (!group.employees.has(emp.id)) {
+        group.employees.set(emp.id, {
+          employeeId: emp.id,
+          empNo: emp.emp_no || '',
+          fullName: emp.full_name,
+        });
+      }
+    }
+
+    const rows = Array.from(deptGroups.entries())
+      .sort(([, a], [, b]) => a.departmentName.localeCompare(b.departmentName))
+      .map(([deptId, group]) => ({
+        departmentId: deptId,
+        departmentName: group.departmentName,
+        employees: Array.from(group.employees.values()).sort((a, b) => a.fullName.localeCompare(b.fullName)),
+        totalEmployees: group.employees.size,
+      }));
+
+    const totalEmployees = rows.reduce((sum, r) => sum + r.totalEmployees, 0);
+
+    return {
+      rows,
+      meta: {
+        ...meta,
+        title: 'Final OT Plan',
+        readiness: 'ready',
+        totalDepartments: rows.length,
+        totalEmployees,
+      },
+    };
   }
 }
