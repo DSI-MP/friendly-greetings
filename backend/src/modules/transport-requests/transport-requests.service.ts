@@ -93,7 +93,7 @@ export class TransportRequestsService {
 
     const enriched = items.map(r => ({
       ...r,
-      department_name: r.department?.name || `Department ${r.department_id}`,
+      department_name: r.department?.name || null,
       employee_count: empCounts.get(r.id) || 0,
     }));
 
