@@ -34,8 +34,6 @@ interface OtPlanMeta {
 
 export default function OtPlanPage() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [otNote, setOtNote] = useState('');
-  const [workFinishTime, setWorkFinishTime] = useState('');
   const [rows, setRows] = useState<OtDepartmentRow[]>([]);
   const [meta, setMeta] = useState<OtPlanMeta | null>(null);
   const [loading, setLoading] = useState(false);
@@ -141,7 +139,7 @@ ${html}
       {/* Controls */}
       <Card>
         <CardContent className="p-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label>Date *</Label>
               <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -152,7 +150,7 @@ ${html}
                 {loading ? 'Loading…' : 'Load OT Plan'}
               </Button>
             </div>
-            {rows.length > 1 && (
+            {rows.length > 0 && (
               <div>
                 <Label>Filter Department</Label>
                 <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -166,14 +164,6 @@ ${html}
                 </Select>
               </div>
             )}
-            <div>
-              <Label>Work Finish Time</Label>
-              <Input type="time" value={workFinishTime} onChange={e => setWorkFinishTime(e.target.value)} />
-            </div>
-            <div>
-              <Label>OT Note</Label>
-              <Input value={otNote} onChange={e => setOtNote(e.target.value)} placeholder="Leave blank for pen fill" />
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -229,8 +219,7 @@ ${html}
 
               <div className="meta">
                 <div><span className="label">Date: </span>{date}</div>
-                <div><span className="label">Work Finish Time: </span>{workFinishTime || <span className="blank-line">&nbsp;</span>}</div>
-                <div className="full"><span className="label">OT Note: </span>{otNote || <span className="blank-line" style={{ minWidth: 400 }}>&nbsp;</span>}</div>
+                <div><span className="label">Status: </span>{meta?.workflowStatus || '—'}</div>
               </div>
 
               {filteredRows.map((dept) => (
