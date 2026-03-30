@@ -34,8 +34,6 @@ interface OtPlanMeta {
 
 export default function OtPlanPage() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [otNote, setOtNote] = useState('');
-  const [workFinishTime, setWorkFinishTime] = useState('');
   const [rows, setRows] = useState<OtDepartmentRow[]>([]);
   const [meta, setMeta] = useState<OtPlanMeta | null>(null);
   const [loading, setLoading] = useState(false);
