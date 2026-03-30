@@ -61,7 +61,7 @@ export default function OtPlanPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDeptId, date]);
+  }, [selectedDeptId]);
 
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
 
