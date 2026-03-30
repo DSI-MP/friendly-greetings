@@ -153,6 +153,7 @@ export class ReportsController {
       case 'cost-summary': return this.costSummary(date);
       case 'exception': return this.exceptionReport(date);
       case 'archive': return this.archiveReport();
+      case 'ot-plan': return this.otPlan(date);
       default: return { rows: [], meta: this.buildMeta(null, null, date) };
     }
   }
