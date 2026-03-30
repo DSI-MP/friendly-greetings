@@ -17,6 +17,19 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Isolate maplibre-gl (~800KB) into its own chunk
+          'maplibre': ['maplibre-gl'],
+          // Isolate recharts (~300KB)
+          'recharts': ['recharts'],
+          // Isolate xlsx (~200KB)
+          'xlsx': ['xlsx'],
+        },
+      },
+    },
   },
 }));
