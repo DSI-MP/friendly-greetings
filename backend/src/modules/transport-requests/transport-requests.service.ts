@@ -164,7 +164,7 @@ export class TransportRequestsService {
 
     return {
       ...req,
-      department_name: req.department?.name || `Department ${req.department_id}`,
+      department_name: req.department?.name || null,
       created_by_name: userMap.get(req.created_by_user_id) || 'Unknown',
       employee_count: employees.length,
       employees,
