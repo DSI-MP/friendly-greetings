@@ -219,8 +219,7 @@ ${html}
 
               <div className="meta">
                 <div><span className="label">Date: </span>{date}</div>
-                <div><span className="label">Work Finish Time: </span>{workFinishTime || <span className="blank-line">&nbsp;</span>}</div>
-                <div className="full"><span className="label">OT Note: </span>{otNote || <span className="blank-line" style={{ minWidth: 400 }}>&nbsp;</span>}</div>
+                <div><span className="label">Status: </span>{meta?.workflowStatus || '—'}</div>
               </div>
 
               {filteredRows.map((dept) => (
