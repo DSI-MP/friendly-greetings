@@ -150,7 +150,7 @@ ${html}
                 {loading ? 'Loading…' : 'Load OT Plan'}
               </Button>
             </div>
-            {rows.length > 1 && (
+            {rows.length > 0 && (
               <div>
                 <Label>Filter Department</Label>
                 <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -164,14 +164,6 @@ ${html}
                 </Select>
               </div>
             )}
-            <div>
-              <Label>Work Finish Time</Label>
-              <Input type="time" value={workFinishTime} onChange={e => setWorkFinishTime(e.target.value)} />
-            </div>
-            <div>
-              <Label>OT Note</Label>
-              <Input value={otNote} onChange={e => setOtNote(e.target.value)} placeholder="Leave blank for pen fill" />
-            </div>
           </div>
         </CardContent>
       </Card>
