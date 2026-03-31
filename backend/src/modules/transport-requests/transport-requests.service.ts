@@ -233,10 +233,13 @@ export class TransportRequestsService {
   async addEmployees(requestId: number, employeeIds: number[]): Promise<{ message: string; count: number }> {
     await this.findOneOrFail(requestId);
 
+    // Deduplicate employee IDs to prevent double entries
+    const uniqueIds = [...new Set(employeeIds)];
+
     // Remove existing then add fresh (idempotent)
     await this.reqEmpRepo.delete({ request_id: requestId });
 
-    const entries = employeeIds.map(eid =>
+    const entries = uniqueIds.map(eid =>
       this.reqEmpRepo.create({ request_id: requestId, employee_id: eid }),
     );
     await this.reqEmpRepo.save(entries);
