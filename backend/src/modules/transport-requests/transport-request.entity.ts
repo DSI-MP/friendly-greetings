@@ -1,6 +1,6 @@
 import {
   Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn,
-  Index, ManyToOne, JoinColumn,
+  Index, ManyToOne, JoinColumn, Unique,
 } from 'typeorm';
 import { RequestStatus } from '../../common/enums';
 import { Department } from '../departments/department.entity';
@@ -76,6 +76,7 @@ export class TransportRequest {
 /* ─────────────────────────────── Request ↔ Employee link ─────────────────────────────── */
 
 @Entity('transport_request_employees')
+@Unique('uq_request_employee', ['request_id', 'employee_id'])
 export class TransportRequestEmployee {
   @PrimaryGeneratedColumn()
   id: number;
