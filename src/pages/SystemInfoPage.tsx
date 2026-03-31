@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   Bus, Code2, Database, Globe, Layers, Monitor, Server,
-  Shield, Sparkles, Heart, Coffee,
+  Shield, Sparkles,
 } from 'lucide-react';
 
 export default function SystemInfoPage() {
