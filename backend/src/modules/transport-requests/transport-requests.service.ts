@@ -282,6 +282,13 @@ export class TransportRequestsService {
     const req = await this.transition(id, RequestStatus.SUBMITTED, RequestStatus.ADMIN_APPROVED, userId);
     await this.reqRepo.update(id, { admin_approved_by: userId, admin_approved_at: new Date() });
     await this.logApproval(id, 'ADMIN_APPROVE', userId);
+    // Notify HOD: request approved by admin
+    this.notificationsService.notifyUser(
+      req.created_by_user_id,
+      'Request Approved by Admin',
+      `Your transport request REQ-${String(id).padStart(4, '0')} has been approved by admin.`,
+      'ADMIN_APPROVED', 'TransportRequest', id,
+    );
     return req;
   }
 
