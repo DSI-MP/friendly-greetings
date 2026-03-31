@@ -411,6 +411,7 @@ export class TransportRequestsService {
       const syncableStatuses = [
         DailyRunStatus.SUBMITTED_TO_HR, DailyRunStatus.READY,
         DailyRunStatus.GROUPED, DailyRunStatus.ASSIGNING,
+        DailyRunStatus.LOCKED,
       ];
       if (!syncableStatuses.includes(dailyRun.status)) return;
 

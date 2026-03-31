@@ -1,9 +1,15 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { LocationChangeRequest, LocationChangeStatus } from './location-change-request.entity';
 import { Employee } from '../employees/employee.entity';
 import { Place } from '../places/place.entity';
+import { TransportRequest, TransportRequestEmployee } from '../transport-requests/transport-request.entity';
+import { GeneratedRouteGroup, GeneratedRouteGroupMember, RouteGroupRun } from '../grouping/grouping.entity';
+import { DailyRun } from '../daily-lock/daily-run.entity';
+import { Vehicle } from '../vehicles/vehicle.entity';
+import { Department } from '../departments/department.entity';
+import { RequestStatus } from '../../common/enums';
 
 @Injectable()
 export class SelfServiceService {
@@ -11,23 +17,30 @@ export class SelfServiceService {
     @InjectRepository(LocationChangeRequest) private lcrRepo: Repository<LocationChangeRequest>,
     @InjectRepository(Employee) private empRepo: Repository<Employee>,
     @InjectRepository(Place) private placeRepo: Repository<Place>,
+    @InjectRepository(TransportRequest) private reqRepo: Repository<TransportRequest>,
+    @InjectRepository(TransportRequestEmployee) private reqEmpRepo: Repository<TransportRequestEmployee>,
+    @InjectRepository(GeneratedRouteGroup) private groupRepo: Repository<GeneratedRouteGroup>,
+    @InjectRepository(GeneratedRouteGroupMember) private memberRepo: Repository<GeneratedRouteGroupMember>,
+    @InjectRepository(RouteGroupRun) private runRepo: Repository<RouteGroupRun>,
+    @InjectRepository(DailyRun) private dailyRunRepo: Repository<DailyRun>,
+    @InjectRepository(Vehicle) private vehicleRepo: Repository<Vehicle>,
+    @InjectRepository(Department) private deptRepo: Repository<Department>,
   ) {}
+
+  /* ── Location Change ── */
 
   async requestLocationChange(userId: number, data: { locationName: string; lat: number; lng: number; reason?: string }) {
     const name = data.locationName?.trim();
     if (!name) throw new BadRequestException('Location name is required');
     if (!data.lat || !data.lng) throw new BadRequestException('Coordinates are required');
 
-    // Check if location name already exists in places table
     const existingPlace = await this.placeRepo.findOne({ where: { title: name } });
     if (existingPlace) {
       throw new BadRequestException('This location name already exists in the database. Please use a unique name (e.g. your Employee ID).');
     }
 
-    // Find employee by user_id
     const emp = await this.empRepo.findOne({ where: { user_id: userId } });
 
-    // Block if pending request exists for same name
     const existing = await this.lcrRepo.findOne({
       where: { user_id: userId, place_title: name, status: LocationChangeStatus.PENDING },
     });
@@ -55,7 +68,6 @@ export class SelfServiceService {
     if (!req) throw new NotFoundException('Request not found');
     if (req.status !== LocationChangeStatus.PENDING) throw new BadRequestException('Request is not pending');
 
-    // Create a new place in the database
     const newPlace = this.placeRepo.create({
       title: req.place_title || `Location-${req.id}`,
       latitude: req.lat,
@@ -64,7 +76,6 @@ export class SelfServiceService {
     });
     const savedPlace = await this.placeRepo.save(newPlace);
 
-    // Update employee location
     if (req.employee_id) {
       await this.empRepo.update(req.employee_id, {
         place_id: savedPlace.id,
@@ -97,5 +108,176 @@ export class SelfServiceService {
     });
 
     return { message: 'Location change rejected' };
+  }
+
+  /* ── Employee Overview (for EMP dashboard) ── */
+
+  async getOverview(userId: number) {
+    const emp = await this.empRepo.findOne({ where: { user_id: userId } });
+    if (!emp) {
+      return {
+        employee: { id: 0, full_name: 'Unknown', email: '', department_name: '' },
+        today_transport: null,
+        recent_trips: [],
+        pending_issues: [],
+        pending_location_requests: [],
+      };
+    }
+
+    const dept = await this.deptRepo.findOne({ where: { id: emp.department_id } });
+
+    // Get today's transport
+    const today = new Date().toISOString().split('T')[0];
+    const todayTransport = await this.resolveEmployeeTransport(emp.id, today);
+
+    // Get recent trips (last 10 dates)
+    const recentTrips = await this.resolveRecentTrips(emp.id, 10);
+
+    // Pending location requests
+    const pendingLocations = await this.lcrRepo.find({
+      where: { user_id: userId },
+      order: { created_at: 'DESC' },
+      take: 10,
+    });
+
+    return {
+      employee: {
+        id: emp.id,
+        full_name: emp.full_name,
+        email: emp.email,
+        phone: emp.phone,
+        emp_no: emp.emp_no,
+        department_name: dept?.name || '',
+      },
+      today_transport: todayTransport,
+      recent_trips: recentTrips,
+      pending_issues: [],
+      pending_location_requests: pendingLocations.map(r => ({
+        id: r.id,
+        lat: r.lat,
+        lng: r.lng,
+        reason: r.reason,
+        status: r.status,
+        created_at: r.created_at,
+      })),
+    };
+  }
+
+  /* ── Transport History (for EMP transport page) ── */
+
+  async getTransportHistory(userId: number) {
+    const emp = await this.empRepo.findOne({ where: { user_id: userId } });
+    if (!emp) return [];
+    return this.resolveRecentTrips(emp.id, 50);
+  }
+
+  /* ── Private helpers ── */
+
+  private async resolveEmployeeTransport(empId: number, date: string): Promise<any | null> {
+    // Find requests that include this employee for the given date
+    const reqEmps = await this.reqEmpRepo
+      .createQueryBuilder('re')
+      .innerJoin('transport_requests', 'tr', 'tr.id = re.request_id')
+      .where('re.employee_id = :empId', { empId })
+      .andWhere('tr.request_date = :date', { date })
+      .andWhere('tr.status IN (:...statuses)', {
+        statuses: [
+          RequestStatus.HR_APPROVED, RequestStatus.DISPATCHED,
+          RequestStatus.CLOSED, RequestStatus.TA_COMPLETED,
+          RequestStatus.GROUPING_COMPLETED, RequestStatus.TA_PROCESSING,
+          RequestStatus.DAILY_LOCKED,
+        ],
+      })
+      .select(['re.request_id', 're.employee_id', 're.drop_notes', 're.pickup_notes'])
+      .getRawMany();
+
+    if (reqEmps.length === 0) return null;
+
+    // Try to find grouping assignment
+    const groupMember = await this.memberRepo.findOne({
+      where: { employee_id: empId },
+      order: { id: 'DESC' },
+    });
+
+    let group: GeneratedRouteGroup | null = null;
+    let vehicle: Vehicle | null = null;
+
+    if (groupMember) {
+      group = await this.groupRepo.findOne({ where: { id: groupMember.generated_group_id } });
+      if (group?.assigned_vehicle_id) {
+        vehicle = await this.vehicleRepo.findOne({ where: { id: group.assigned_vehicle_id } });
+      }
+    }
+
+    return {
+      request_date: date,
+      route_name: group?.corridor_label || null,
+      group_code: group?.group_code || null,
+      registration_no: vehicle?.registration_no || null,
+      vehicle_type: vehicle?.type || null,
+      driver_name: vehicle?.driver_name || null,
+      driver_phone: vehicle?.driver_phone || null,
+      drop_note: reqEmps[0]?.re_drop_notes || null,
+      pickup_note: reqEmps[0]?.re_pickup_notes || null,
+      status: group?.status || 'PENDING',
+    };
+  }
+
+  private async resolveRecentTrips(empId: number, limit: number): Promise<any[]> {
+    // Find all request-employee links for this employee
+    const reqEmps = await this.reqEmpRepo
+      .createQueryBuilder('re')
+      .innerJoin('transport_requests', 'tr', 'tr.id = re.request_id')
+      .where('re.employee_id = :empId', { empId })
+      .andWhere('tr.status IN (:...statuses)', {
+        statuses: [
+          RequestStatus.HR_APPROVED, RequestStatus.DISPATCHED,
+          RequestStatus.CLOSED, RequestStatus.TA_COMPLETED,
+          RequestStatus.GROUPING_COMPLETED,
+        ],
+      })
+      .select(['re.request_id as request_id', 're.drop_notes as drop_notes', 'tr.request_date as request_date', 'tr.status as status'])
+      .orderBy('tr.request_date', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    if (reqEmps.length === 0) return [];
+
+    // For each, try to resolve group info
+    const trips: any[] = [];
+    for (const re of reqEmps) {
+      // Find group member for this employee in the context of this request's date
+      const dailyRun = await this.dailyRunRepo.findOne({ where: { run_date: re.request_date } });
+      let group: GeneratedRouteGroup | null = null;
+      let vehicle: Vehicle | null = null;
+
+      if (dailyRun?.latest_run_id) {
+        const member = await this.memberRepo.findOne({
+          where: { employee_id: empId },
+          order: { id: 'DESC' },
+        });
+        if (member) {
+          group = await this.groupRepo.findOne({ where: { id: member.generated_group_id } });
+          if (group?.assigned_vehicle_id) {
+            vehicle = await this.vehicleRepo.findOne({ where: { id: group.assigned_vehicle_id } });
+          }
+        }
+      }
+
+      trips.push({
+        request_date: typeof re.request_date === 'string' ? re.request_date : new Date(re.request_date).toISOString().split('T')[0],
+        route_name: group?.corridor_label || null,
+        group_code: group?.group_code || null,
+        registration_no: vehicle?.registration_no || null,
+        vehicle_type: vehicle?.type || null,
+        driver_name: vehicle?.driver_name || null,
+        driver_phone: vehicle?.driver_phone || null,
+        drop_note: re.drop_notes || null,
+        pickup_note: null,
+        status: re.status || group?.status || 'PENDING',
+      });
+    }
+
+    return trips;
   }
 }
