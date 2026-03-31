@@ -331,6 +331,32 @@ export class TransportRequestsService {
     // Sync DailyRun: if ALL requests in the daily run are now HR_APPROVED, update DailyRun status
     await this.syncDailyRunAfterHrApproval(req);
 
+    // Notify Admin/Super Admin: HR approved
+    this.notificationsService.notifyRole(
+      [AppRole.ADMIN, AppRole.SUPER_ADMIN],
+      'Transport Request HR Approved',
+      `Transport request REQ-${String(id).padStart(4, '0')} has been approved by HR.`,
+      'HR_APPROVED', 'TransportRequest', id,
+    );
+    // Notify Planning: OT sheet available
+    this.notificationsService.notifyRole(
+      [AppRole.PLANNING],
+      'HR Approval Complete — OT Plan Available',
+      `HR has approved REQ-${String(id).padStart(4, '0')}. The final OT plan is now available for printing.`,
+      'HR_APPROVED_OT_READY', 'TransportRequest', id,
+    );
+    // Notify HOD: request approved
+    this.notificationsService.notifyUser(
+      req.created_by_user_id,
+      'Request HR Approved',
+      `Your transport request REQ-${String(id).padStart(4, '0')} has received final HR approval.`,
+      'HR_APPROVED', 'TransportRequest', id,
+    );
+    // Notify employees in this request
+    this.notifyRequestEmployees(id, 'Transport Details Available',
+      'Your transport drop-off details are now available. Check your dashboard for vehicle and driver information.',
+      'TRANSPORT_AVAILABLE');
+
     return req;
   }
 
