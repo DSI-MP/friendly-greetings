@@ -76,6 +76,7 @@ export class TransportRequest {
 /* ─────────────────────────────── Request ↔ Employee link ─────────────────────────────── */
 
 @Entity('transport_request_employees')
+@Unique('uq_request_employee', ['request_id', 'employee_id'])
 export class TransportRequestEmployee {
   @PrimaryGeneratedColumn()
   id: number;
