@@ -136,8 +136,8 @@ export default function EmpDashboardPage() {
         <CardHeader className="pb-3"><CardTitle className="text-base">{t('empDashboard.quickActions')}</CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <QuickAction icon={<ClipboardList className="h-5 w-5" />} label={t('empDashboard.viewTransport')} onClick={() => navigate('/emp/transport')} />
             <QuickAction icon={<MapPin className="h-5 w-5" />} label={t('empDashboard.updateDestination')} onClick={() => navigate('/emp/self-service')} />
-            <QuickAction icon={<AlertTriangle className="h-5 w-5" />} label={t('empDashboard.reportIssue')} onClick={() => navigate('/emp/self-service')} />
             <QuickAction icon={<User className="h-5 w-5" />} label={t('empDashboard.myProfile')} onClick={() => navigate('/emp/profile')} />
             <QuickAction icon={<Bell className="h-5 w-5" />} label={t('sidebar.notifications')} onClick={() => navigate('/emp/notifications')} />
           </div>

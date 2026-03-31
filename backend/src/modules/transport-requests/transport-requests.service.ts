@@ -8,12 +8,13 @@ import {
   ApprovalHistory,
 } from './transport-request.entity';
 import { PaginatedResult } from '../../common/dto';
-import { RequestStatus } from '../../common/enums';
+import { RequestStatus, AppRole } from '../../common/enums';
 import { Department } from '../departments/department.entity';
 import { Employee } from '../employees/employee.entity';
 import { User } from '../users/user.entity';
 import { Place } from '../places/place.entity';
 import { DailyRun, DailyRunStatus } from '../daily-lock/daily-run.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /* ─── Internal types ─── */
 
@@ -49,6 +50,7 @@ export class TransportRequestsService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Place) private readonly placeRepo: Repository<Place>,
     @InjectRepository(DailyRun) private readonly dailyRunRepo: Repository<DailyRun>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /* ────────────────── List ────────────────── */
@@ -265,13 +267,28 @@ export class TransportRequestsService {
     if (empCount === 0) {
       throw new BadRequestException('Cannot submit a request with no employees');
     }
-    return this.transition(id, RequestStatus.DRAFT, RequestStatus.SUBMITTED, userId);
+    const req = await this.transition(id, RequestStatus.DRAFT, RequestStatus.SUBMITTED, userId);
+    // Notify Admin/Super Admin: new transport request received
+    this.notificationsService.notifyRole(
+      [AppRole.ADMIN, AppRole.SUPER_ADMIN],
+      'New Transport Request Received',
+      `Transport request REQ-${String(id).padStart(4, '0')} has been submitted for approval.`,
+      'REQUEST_SUBMITTED', 'TransportRequest', id,
+    );
+    return req;
   }
 
   async adminApprove(id: number, userId: number): Promise<TransportRequest> {
     const req = await this.transition(id, RequestStatus.SUBMITTED, RequestStatus.ADMIN_APPROVED, userId);
     await this.reqRepo.update(id, { admin_approved_by: userId, admin_approved_at: new Date() });
     await this.logApproval(id, 'ADMIN_APPROVE', userId);
+    // Notify HOD: request approved by admin
+    this.notificationsService.notifyUser(
+      req.created_by_user_id,
+      'Request Approved by Admin',
+      `Your transport request REQ-${String(id).padStart(4, '0')} has been approved by admin.`,
+      'ADMIN_APPROVED', 'TransportRequest', id,
+    );
     return req;
   }
 
@@ -314,6 +331,32 @@ export class TransportRequestsService {
     // Sync DailyRun: if ALL requests in the daily run are now HR_APPROVED, update DailyRun status
     await this.syncDailyRunAfterHrApproval(req);
 
+    // Notify Admin/Super Admin: HR approved
+    this.notificationsService.notifyRole(
+      [AppRole.ADMIN, AppRole.SUPER_ADMIN],
+      'Transport Request HR Approved',
+      `Transport request REQ-${String(id).padStart(4, '0')} has been approved by HR.`,
+      'HR_APPROVED', 'TransportRequest', id,
+    );
+    // Notify Planning: OT sheet available
+    this.notificationsService.notifyRole(
+      [AppRole.PLANNING],
+      'HR Approval Complete — OT Plan Available',
+      `HR has approved REQ-${String(id).padStart(4, '0')}. The final OT plan is now available for printing.`,
+      'HR_APPROVED_OT_READY', 'TransportRequest', id,
+    );
+    // Notify HOD: request approved
+    this.notificationsService.notifyUser(
+      req.created_by_user_id,
+      'Request HR Approved',
+      `Your transport request REQ-${String(id).padStart(4, '0')} has received final HR approval.`,
+      'HR_APPROVED', 'TransportRequest', id,
+    );
+    // Notify employees in this request
+    this.notifyRequestEmployees(id, 'Transport Details Available',
+      'Your transport drop-off details are now available. Check your dashboard for vehicle and driver information.',
+      'TRANSPORT_AVAILABLE');
+
     return req;
   }
 
@@ -352,6 +395,21 @@ export class TransportRequestsService {
     const req = await this.reqRepo.findOne({ where: { id } });
     if (!req) throw new NotFoundException(`Transport request #${id} not found`);
     return req;
+  }
+
+  /** Notify all employees linked to a transport request */
+  private async notifyRequestEmployees(requestId: number, title: string, body: string, eventType: string) {
+    try {
+      const reqEmps = await this.reqEmpRepo.find({ where: { request_id: requestId } });
+      const empIds = reqEmps.map(re => re.employee_id);
+      if (empIds.length === 0) return;
+      const emps = await this.empRepo.findByIds(empIds);
+      for (const emp of emps) {
+        if (emp.user_id) {
+          this.notificationsService.notifyUser(emp.user_id, title, body, eventType, 'TransportRequest', requestId);
+        }
+      }
+    } catch { /* non-critical */ }
   }
 
   private async transition(
@@ -411,6 +469,7 @@ export class TransportRequestsService {
       const syncableStatuses = [
         DailyRunStatus.SUBMITTED_TO_HR, DailyRunStatus.READY,
         DailyRunStatus.GROUPED, DailyRunStatus.ASSIGNING,
+        DailyRunStatus.LOCKED,
       ];
       if (!syncableStatuses.includes(dailyRun.status)) return;
 

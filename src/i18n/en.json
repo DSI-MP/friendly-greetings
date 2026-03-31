@@ -535,7 +535,8 @@
     "recentHistory": "Recent Drop-Off History",
     "noRecentHistory": "No recent drop-off history",
     "myRequestsIssues": "My Requests & Issues",
-    "destinationChangeRequest": "Destination Change Request"
+    "destinationChangeRequest": "Destination Change Request",
+    "viewTransport": "My Transport"
   },
   "empProfile": {
     "title": "My Profile",

@@ -25,27 +25,40 @@ export class DashboardController {
     @InjectRepository(Department) private deptRepo: Repository<Department>,
   ) {}
 
+  private today(): string {
+    return new Date().toISOString().split('T')[0];
+  }
+
   @Get('admin')
   @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN)
   async adminDashboard() {
-    const [totalRequests, pendingRequests, totalEmployees, totalVehicles, totalDrivers, totalDepartments] =
+    const today = this.today();
+    const [todayRequests, todayPending, totalEmployees, totalVehicles, totalDrivers, totalDepartments] =
       await Promise.all([
-        this.reqRepo.count(),
-        this.reqRepo.count({ where: { status: RequestStatus.SUBMITTED } }),
-        this.empRepo.count(),
+        this.reqRepo.count({ where: { request_date: today as any } }),
+        this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.SUBMITTED } }),
+        this.empRepo.count({ where: { is_active: true } }),
         this.vehRepo.count({ where: { is_active: true } }),
         this.driverRepo.count({ where: { is_active: true } }),
         this.deptRepo.count({ where: { is_active: true } }),
       ]);
-    return { totalRequests, pendingRequests, totalEmployees, totalVehicles, totalDrivers, totalDepartments };
+    return {
+      totalRequests: todayRequests,
+      pendingRequests: todayPending,
+      totalEmployees,
+      totalVehicles,
+      totalDrivers,
+      totalDepartments,
+    };
   }
 
   @Get('hod')
   @Roles(AppRole.HOD)
   async hodDashboard(@CurrentUser() user: any) {
+    const today = this.today();
     const [deptRequests, deptEmployees] = await Promise.all([
-      this.reqRepo.count({ where: { department_id: user.departmentId } }),
-      this.empRepo.count({ where: { department_id: user.departmentId } }),
+      this.reqRepo.count({ where: { department_id: user.departmentId, request_date: today as any } }),
+      this.empRepo.count({ where: { department_id: user.departmentId, is_active: true } }),
     ]);
     return { deptRequests, deptEmployees, departmentId: user.departmentId };
   }
@@ -53,16 +66,18 @@ export class DashboardController {
   @Get('hr')
   @Roles(AppRole.HR)
   async hrDashboard() {
-    const pendingHR = await this.reqRepo.count({ where: { status: RequestStatus.TA_COMPLETED } });
-    const approved = await this.reqRepo.count({ where: { status: RequestStatus.HR_APPROVED } });
+    const today = this.today();
+    const pendingHR = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.TA_COMPLETED } });
+    const approved = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.HR_APPROVED } });
     return { pendingHR, approved };
   }
 
   @Get('ta')
   @Roles(AppRole.TRANSPORT_AUTHORITY)
   async taDashboard() {
-    const pendingGrouping = await this.reqRepo.count({ where: { status: RequestStatus.DAILY_LOCKED } });
-    const processing = await this.reqRepo.count({ where: { status: RequestStatus.TA_PROCESSING } });
+    const today = this.today();
+    const pendingGrouping = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.DAILY_LOCKED } });
+    const processing = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.TA_PROCESSING } });
     return { pendingGrouping, processing };
   }
 

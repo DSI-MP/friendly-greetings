@@ -14,6 +14,18 @@ import { LocationChangeRequestDto, SubmitIssueDto, ReviewNoteDto } from './dto/s
 export class SelfServiceController {
   constructor(private readonly service: SelfServiceService) {}
 
+  /** Employee overview — today's transport, recent trips, pending items */
+  @Get('overview')
+  getOverview(@CurrentUser('id') userId: number) {
+    return this.service.getOverview(userId);
+  }
+
+  /** Employee transport history — past transport entries */
+  @Get('transport-history')
+  getTransportHistory(@CurrentUser('id') userId: number) {
+    return this.service.getTransportHistory(userId);
+  }
+
   @Post('location-change')
   requestLocationChange(
     @CurrentUser('id') userId: number,
