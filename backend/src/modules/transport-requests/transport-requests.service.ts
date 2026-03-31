@@ -267,7 +267,15 @@ export class TransportRequestsService {
     if (empCount === 0) {
       throw new BadRequestException('Cannot submit a request with no employees');
     }
-    return this.transition(id, RequestStatus.DRAFT, RequestStatus.SUBMITTED, userId);
+    const req = await this.transition(id, RequestStatus.DRAFT, RequestStatus.SUBMITTED, userId);
+    // Notify Admin/Super Admin: new transport request received
+    this.notificationsService.notifyRole(
+      [AppRole.ADMIN, AppRole.SUPER_ADMIN],
+      'New Transport Request Received',
+      `Transport request REQ-${String(id).padStart(4, '0')} has been submitted for approval.`,
+      'REQUEST_SUBMITTED', 'TransportRequest', id,
+    );
+    return req;
   }
 
   async adminApprove(id: number, userId: number): Promise<TransportRequest> {
