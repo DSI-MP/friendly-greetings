@@ -50,6 +50,7 @@ export class TransportRequestsService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Place) private readonly placeRepo: Repository<Place>,
     @InjectRepository(DailyRun) private readonly dailyRunRepo: Repository<DailyRun>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /* ────────────────── List ────────────────── */
