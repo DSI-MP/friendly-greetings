@@ -13,6 +13,7 @@ import { Employee } from '../employees/employee.entity';
 import { User } from '../users/user.entity';
 import { Place } from '../places/place.entity';
 import { DailyRun } from '../daily-lock/daily-run.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DailyRun } from '../daily-lock/daily-run.entity';
       Place,
       DailyRun,
     ]),
+    NotificationsModule,
   ],
   controllers: [TransportRequestsController],
   providers: [TransportRequestsService],
