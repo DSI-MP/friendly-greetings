@@ -69,7 +69,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="saas-header">
             <div className="flex items-center gap-3">
-              <SidebarTrigger className="text-muted-foreground hover:text-foreground transition-colors" />
+              <SidebarTrigger className="h-9 w-9 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary hover:scale-105 active:scale-95 transition-all duration-200 shadow-sm" />
               <Separator orientation="vertical" className="hidden md:block h-5" />
               {/* Page context icon + label */}
               <div className="hidden md:flex items-center gap-2">
