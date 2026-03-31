@@ -1,6 +1,6 @@
 import {
   Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn,
-  Index, ManyToOne, JoinColumn,
+  Index, ManyToOne, JoinColumn, Unique,
 } from 'typeorm';
 import { RequestStatus } from '../../common/enums';
 import { Department } from '../departments/department.entity';
