@@ -397,6 +397,21 @@ export class TransportRequestsService {
     return req;
   }
 
+  /** Notify all employees linked to a transport request */
+  private async notifyRequestEmployees(requestId: number, title: string, body: string, eventType: string) {
+    try {
+      const reqEmps = await this.reqEmpRepo.find({ where: { request_id: requestId } });
+      const empIds = reqEmps.map(re => re.employee_id);
+      if (empIds.length === 0) return;
+      const emps = await this.empRepo.findByIds(empIds);
+      for (const emp of emps) {
+        if (emp.user_id) {
+          this.notificationsService.notifyUser(emp.user_id, title, body, eventType, 'TransportRequest', requestId);
+        }
+      }
+    } catch { /* non-critical */ }
+  }
+
   private async transition(
     id: number,
     expectedFrom: RequestStatus,
