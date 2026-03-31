@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   Bus, Code2, Database, Globe, Layers, Monitor, Server,
-  Shield, Sparkles, Heart, Coffee,
+  Shield, Sparkles,
 } from 'lucide-react';
 
 export default function SystemInfoPage() {
@@ -129,17 +129,10 @@ export default function SystemInfoPage() {
       <Card className="bg-muted/20 border-dashed">
         <CardContent className="p-6">
           <div className="text-center space-y-3">
-            <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
-              <span className="text-xs">{t('systemInfo.craftedWith')}</span>
-              <Heart className="h-3.5 w-3.5 text-red-500 fill-red-500" />
-              <span className="text-xs">{t('systemInfo.and')}</span>
-              <Coffee className="h-3.5 w-3.5 text-amber-600" />
-            </div>
+            <p className="text-xs text-muted-foreground">{t('systemInfo.createdBy')}</p>
+            <p className="text-sm font-semibold text-foreground">{t('systemInfo.developerName')}</p>
+            <p className="text-xs text-muted-foreground">{t('systemInfo.developerUnit')}</p>
             <Separator className="max-w-xs mx-auto" />
-            <div>
-              <p className="text-sm font-semibold text-foreground">{t('systemInfo.developerName')}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('systemInfo.developerUnit')}</p>
-            </div>
             <p className="text-[11px] text-muted-foreground/60 max-w-md mx-auto">{t('systemInfo.tagline')}</p>
           </div>
         </CardContent>

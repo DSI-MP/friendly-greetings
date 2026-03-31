@@ -920,10 +920,9 @@
     "rolePlanningDesc": "වාහන සහ සම්පත් සැලසුම් අධීක්ෂණය",
     "roleEmployee": "සේවකයා",
     "roleEmployeeDesc": "ස්වයං සේවා ප්‍රවේශය, ප්‍රවාහන දසුන සහ පැතිකඩ",
-    "craftedWith": "සාදා ඇත්තේ",
-    "and": "සහ",
+    "createdBy": "නිර්මාණය කළේ",
     "developerName": "W.O Sandaruwan Jayalath",
-    "developerUnit": "නිෂ්පාදන ප්‍රවාහන පාලන ඒකකය",
+    "developerUnit": "නිෂ්පාදන පාලන තාක්ෂණික ඒකකය",
     "tagline": "සේවක ප්‍රවාහන මෙහෙයුම් විධිමත් කිරීමට නිර්මාණය සහ සංවර්ධනය — සෑම නිවස බලා ගමනක්ම වැදගත් නිසා."
   },
   "taProcessingPage": {

@@ -985,10 +985,9 @@
     "rolePlanningDesc": "Vehicle and resource planning oversight",
     "roleEmployee": "Employee",
     "roleEmployeeDesc": "Self-service access, transport view, and profile",
-    "craftedWith": "Crafted with",
-    "and": "and",
+    "createdBy": "Created by",
     "developerName": "W.O Sandaruwan Jayalath",
-    "developerUnit": "Production Transport Control Unit",
+    "developerUnit": "Production Control Technical Unit",
     "tagline": "Designed and developed to streamline employee transport operations — because every journey home matters."
   },
   "taProcessingPage": {
