@@ -8,12 +8,13 @@ import {
   ApprovalHistory,
 } from './transport-request.entity';
 import { PaginatedResult } from '../../common/dto';
-import { RequestStatus } from '../../common/enums';
+import { RequestStatus, AppRole } from '../../common/enums';
 import { Department } from '../departments/department.entity';
 import { Employee } from '../employees/employee.entity';
 import { User } from '../users/user.entity';
 import { Place } from '../places/place.entity';
 import { DailyRun, DailyRunStatus } from '../daily-lock/daily-run.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /* ─── Internal types ─── */
 
