@@ -84,7 +84,7 @@ export class TransportRequestsService {
       const counts = await this.reqEmpRepo
         .createQueryBuilder('re')
         .select('re.request_id', 'request_id')
-        .addSelect('COUNT(*)::int', 'count')
+        .addSelect('COUNT(DISTINCT re.employee_id)::int', 'count')
         .where('re.request_id IN (:...ids)', { ids: requestIds })
         .groupBy('re.request_id')
         .getRawMany();
