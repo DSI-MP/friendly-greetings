@@ -787,7 +787,7 @@ export default function TaAssignmentBoardPage() {
                       )}
 
                       {g.corridor_label && (
-                        <p className="text-[11px] text-muted-foreground">Direction: {g.corridor_label.replace(/^Corridor\s*/i, 'Area ')}</p>
+                        <p className="text-[11px] text-muted-foreground">{g.corridor_label.replace(/^Direction\s+C\d+$/i, '').trim() || g.corridor_label}</p>
                       )}
                       {g.cluster_note && (
                         <p className="text-[11px] text-muted-foreground">{g.cluster_note}</p>

@@ -57,6 +57,19 @@ export default () => ({
     lng: parseFloat(process.env.DEPOT_LNG || '80.2479661'),
   },
 
+  grouping: {
+    maxSegmentDurationMinutes: parseInt(process.env.MAX_SEGMENT_DURATION_MINUTES || '90', 10),
+    softMaxSegmentDurationMinutes: parseInt(process.env.SOFT_MAX_SEGMENT_DURATION_MINUTES || '75', 10),
+    hardMaxSegmentDurationMinutes: parseInt(process.env.HARD_MAX_SEGMENT_DURATION_MINUTES || '120', 10),
+    maxStopsPerSegment: parseInt(process.env.MAX_STOPS_PER_SEGMENT || '45', 10),
+    largeBucketThreshold: parseInt(process.env.LARGE_BUCKET_THRESHOLD || '50', 10),
+    maxRebalanceIterations: parseInt(process.env.MAX_REBALANCE_ITERATIONS || '5', 10),
+    maxCorridorSubgroupSize: parseInt(process.env.MAX_CORRIDOR_SUBGROUP_SIZE || '40', 10),
+    tollAvoidanceEnabled: process.env.TOLL_AVOIDANCE_ENABLED !== 'false',
+    clusterProtectionRadiusKm: parseFloat(process.env.CLUSTER_PROTECTION_RADIUS_KM || '1.5'),
+    minCutPointScore: parseFloat(process.env.MIN_CUT_POINT_SCORE || '0.25'),
+  },
+
   vehicle: {
     vanCapacity: parseInt(process.env.VAN_CAPACITY || '15', 10),
     busCapacity: parseInt(process.env.BUS_CAPACITY || '52', 10),
