@@ -15,7 +15,7 @@ import { GroupStatus, VehicleType, RequestStatus } from '../../common/enums';
 import { RoutingService } from '../routing/routing.service';
 import { LatLng } from '../routing/routing-provider.interface';
 import { GroupingV3Engine, EmployeeStop, UnresolvedEmployee, VehicleConfig } from './grouping-v3.engine';
-import { GroupingV4Engine, GroupingV4Config, SegmentExplanation } from './grouping-v4.engine';
+import { GroupingV4Engine, GroupingV4Config, SegmentExplanation, ValidationCode } from './grouping-v4.engine';
 
 @Injectable()
 export class GroupingService {
