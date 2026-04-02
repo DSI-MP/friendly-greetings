@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, ParseIntPipe, UploadedFile, UseInterceptors, BadRequestException, Res } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { LoginThrottleGuard } from '../auth/auth.guard.throttle';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { EmployeesService } from './employees.service';
@@ -21,8 +22,9 @@ export class EmployeesController {
     private bulkUploadService: BulkUploadService,
   ) {}
 
-  // Public endpoint: self-register
+  // Public endpoint: self-register (rate limited)
   @Post('self-register')
+  @UseGuards(LoginThrottleGuard)
   selfRegister(@Body() dto: SelfRegisterDto) {
     return this.service.selfRegister(dto);
   }
@@ -50,8 +52,8 @@ export class EmployeesController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth()
   @Roles(AppRole.ADMIN, AppRole.SUPER_ADMIN, AppRole.HOD)
-  update(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateEmployeeDto) {
-    return this.service.update(id, data);
+  update(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateEmployeeDto, @CurrentUser() user: any) {
+    return this.service.update(id, data, user);
   }
 
   @Get('pending-self-registrations')
@@ -109,7 +111,6 @@ export class EmployeesController {
   @UseInterceptors(FileInterceptor('file', {
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
     fileFilter: (_req, file, cb) => {
-      // Android/mobile browsers often send application/octet-stream for .xlsx files
       const allowedMime = [
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'application/vnd.ms-excel',
@@ -126,9 +127,6 @@ export class EmployeesController {
   async bulkUpload(@UploadedFile() file: any, @CurrentUser() user: any) {
     if (!file) throw new BadRequestException('File is required');
 
-    console.log(`[BulkUpload] file: name=${file.originalname}, mime=${file.mimetype}, size=${file.size}`);
-    console.log(`[BulkUpload] user: id=${user.sub ?? user.id}, role=${user.role}, departmentId=${user.departmentId}`);
-    
     const departmentId = Number(user.departmentId);
     if (!departmentId || isNaN(departmentId)) throw new BadRequestException('HOD must be assigned to a department');
     
@@ -144,7 +142,6 @@ export class EmployeesController {
       defval: '',
       blankrows: false,
     });
-    console.log(`[BulkUpload] sheet="${sheetName}", rowCount=${rows.length}`);
     if (rows.length === 0) throw new BadRequestException('No data rows found in Excel file');
     if (rows.length > 1000) throw new BadRequestException('Maximum 1000 rows per upload');
 

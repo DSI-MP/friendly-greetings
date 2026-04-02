@@ -192,7 +192,10 @@ export class AmazonLocationProvider implements RoutingProvider {
           : undefined,
         LegGeometryFormat: 'Simple',
         TravelMode: 'Car',
-      });
+        // Exclude toll roads — snap to nearest non-toll road
+        Tolls: { AllTransponders: false, AllVignettes: false },
+        Exclude: { TollRoads: true },
+      } as any); // 'as any' — Exclude.TollRoads may not be in all SDK type versions but is supported by the API
       const data = await this.geoRoutesClient!.send(command);
       const route = data?.Routes?.[0];
       if (!route) return null;
@@ -275,7 +278,9 @@ export class AmazonLocationProvider implements RoutingProvider {
         Destinations: destinations.map(d => ({ Position: [d.lng, d.lat] })),
         TravelMode: 'Car',
         RoutingBoundary: { Unbounded: true },
-      });
+        // Exclude toll roads from matrix calculations
+        Exclude: { TollRoads: true },
+      } as any);
       const data = await this.geoRoutesClient!.send(command);
       return (data.RouteMatrix || []).map((row: any[]) =>
         row.map(cell => ({

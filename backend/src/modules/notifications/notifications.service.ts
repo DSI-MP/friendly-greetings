@@ -21,12 +21,16 @@ export class NotificationsService {
     });
   }
 
-  async markAsRead(notificationIds: number[]) {
+  async markAsRead(notificationIds: number[], userId: number) {
+    if (!notificationIds || notificationIds.length === 0) return { message: 'No notifications to update' };
+
+    // Only mark notifications owned by the requesting user (IDOR protection)
     await this.notifRepo
       .createQueryBuilder()
       .update()
       .set({ read: true, read_at: new Date() })
-      .whereInIds(notificationIds)
+      .where('id IN (:...ids)', { ids: notificationIds })
+      .andWhere('user_id = :userId', { userId })
       .execute();
     return { message: 'Marked as read' };
   }

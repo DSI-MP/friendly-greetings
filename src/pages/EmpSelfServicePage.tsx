@@ -139,8 +139,8 @@ export default function EmpSelfServicePage() {
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <span className="text-muted-foreground">Route</span>
-                          <p className="font-medium text-foreground">{entry.route_name || entry.group_code || '—'}</p>
+                          <span className="text-muted-foreground">Destination</span>
+                          <p className="font-medium text-foreground">{entry.route_name || '—'}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Vehicle</span>
@@ -150,10 +150,12 @@ export default function EmpSelfServicePage() {
                           <span className="text-muted-foreground">Driver</span>
                           <p className="font-medium text-foreground">{entry.driver_name || '—'}</p>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground">Group</span>
-                          <p className="font-medium text-foreground">{entry.group_code || '—'}</p>
-                        </div>
+                        {entry.driver_phone && (
+                          <div>
+                            <span className="text-muted-foreground">Driver Phone</span>
+                            <p className="font-medium text-foreground">{entry.driver_phone}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

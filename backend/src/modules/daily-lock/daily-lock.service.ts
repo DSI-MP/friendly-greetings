@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { DailyLock } from './daily-lock.entity';
 import { DailyRun, DailyRunStatus } from './daily-run.entity';
 import { TransportRequest, TransportRequestEmployee } from '../transport-requests/transport-request.entity';
+import { GeneratedRouteGroup, GeneratedRouteGroupMember } from '../grouping/grouping.entity';
 import { RequestStatus } from '../../common/enums';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class DailyLockService {
     @InjectRepository(DailyRun) private dailyRunRepo: Repository<DailyRun>,
     @InjectRepository(TransportRequest) private reqRepo: Repository<TransportRequest>,
     @InjectRepository(TransportRequestEmployee) private reqEmpRepo: Repository<TransportRequestEmployee>,
+    @InjectRepository(GeneratedRouteGroup) private groupRepo: Repository<GeneratedRouteGroup>,
+    @InjectRepository(GeneratedRouteGroupMember) private memberRepo: Repository<GeneratedRouteGroupMember>,
   ) {}
 
   async getStatus(date: string): Promise<{
@@ -250,14 +253,43 @@ export class DailyLockService {
       throw new BadRequestException(`No grouped/processing requests found for ${date}. Run grouping first.`);
     }
 
+    // ── Grouping integrity check: reject if duplicate employees in generated groups ──
+    const dailyRun = await this.dailyRunRepo.findOne({ where: { run_date: date as any } });
+    if (dailyRun?.latest_run_id) {
+      const groups = await this.groupRepo.find({ where: { run_id: dailyRun.latest_run_id } });
+      if (groups.length > 0) {
+        const groupIds = groups.map(g => g.id);
+        const allMembers = await this.memberRepo.find({ where: { generated_group_id: In(groupIds) } });
+        const seenEmployees = new Set<number>();
+        const duplicates: number[] = [];
+        for (const m of allMembers) {
+          if (seenEmployees.has(m.employee_id)) duplicates.push(m.employee_id);
+          seenEmployees.add(m.employee_id);
+        }
+        if (duplicates.length > 0) {
+          this.logger.error(`Grouping integrity failure for ${date}: duplicate employee IDs [${duplicates.join(',')}] in generated groups`);
+          throw new BadRequestException(
+            `Cannot submit to HR: ${duplicates.length} employee(s) appear in multiple groups. Re-run grouping to fix.`,
+          );
+        }
+        // Validate employee_count matches actual members
+        for (const g of groups) {
+          const actual = allMembers.filter(m => m.generated_group_id === g.id).length;
+          if (actual !== g.employee_count) {
+            this.logger.warn(`Group ${g.group_code} employee_count mismatch: stored=${g.employee_count}, actual=${actual}`);
+          }
+        }
+      }
+    }
+
     for (const req of requests) {
       await this.reqRepo.update(req.id, { status: RequestStatus.TA_COMPLETED });
     }
 
-    // Update DailyRun
-    const dailyRun = await this.dailyRunRepo.findOne({ where: { run_date: date as any } });
-    if (dailyRun) {
-      await this.dailyRunRepo.update(dailyRun.id, {
+    // Update DailyRun (reuse variable from integrity check above)
+    const dailyRunForUpdate = dailyRun ?? await this.dailyRunRepo.findOne({ where: { run_date: date as any } });
+    if (dailyRunForUpdate) {
+      await this.dailyRunRepo.update(dailyRunForUpdate.id, {
         status: DailyRunStatus.SUBMITTED_TO_HR,
         submitted_to_hr_at: new Date(),
       });

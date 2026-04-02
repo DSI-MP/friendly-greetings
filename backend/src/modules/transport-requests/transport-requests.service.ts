@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import {
@@ -34,6 +34,19 @@ interface ListQuery {
   status?: RequestStatus;
 }
 
+interface UserContext {
+  id?: number;
+  sub?: number;
+  role: AppRole;
+  departmentId?: number;
+}
+
+/** Statuses in which a request may be edited */
+const EDITABLE_STATUSES: ReadonlySet<RequestStatus> = new Set([
+  RequestStatus.DRAFT,
+  RequestStatus.ADMIN_REJECTED, // allow resubmission after rejection
+]);
+
 /* ─── Service ─── */
 
 @Injectable()
@@ -53,17 +66,90 @@ export class TransportRequestsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
+  /* ────────────────── Authorization helper ────────────────── */
+
+  /**
+   * Centralized ownership / scope check.
+   * - SUPER_ADMIN / ADMIN: full access
+   * - HOD: only own department
+   * - TA / HR: read access to requests in relevant workflow states
+   * - EMP: no access to request management
+   */
+  private assertRequestAccess(
+    user: UserContext,
+    request: TransportRequest,
+    action: 'read' | 'write',
+  ): void {
+    const role = user.role;
+
+    // SUPER_ADMIN / ADMIN bypass
+    if (role === AppRole.SUPER_ADMIN || role === AppRole.ADMIN) return;
+
+    // HOD: own department only
+    if (role === AppRole.HOD) {
+      const userDeptId = Number(user.departmentId);
+      if (!userDeptId || request.department_id !== userDeptId) {
+        throw new ForbiddenException('You can only access requests in your own department.');
+      }
+      return;
+    }
+
+    // TA: read-only access for processing states
+    if (role === AppRole.TRANSPORT_AUTHORITY) {
+      if (action === 'write') {
+        throw new ForbiddenException('Transport Authority cannot modify request details.');
+      }
+      return;
+    }
+
+    // HR: read-only access for approval states
+    if (role === AppRole.HR) {
+      if (action === 'write') {
+        throw new ForbiddenException('HR cannot modify request details.');
+      }
+      return;
+    }
+
+    // PLANNING: read-only
+    if (role === AppRole.PLANNING) {
+      if (action === 'write') {
+        throw new ForbiddenException('Planning role has read-only access.');
+      }
+      return;
+    }
+
+    // EMP and any other role: no access
+    throw new ForbiddenException('You do not have access to this resource.');
+  }
+
+  /** Assert the request is in an editable state */
+  private assertEditable(request: TransportRequest): void {
+    if (!EDITABLE_STATUSES.has(request.status)) {
+      throw new BadRequestException(
+        `Request cannot be edited in status "${request.status}". Editing is only allowed in DRAFT or ADMIN_REJECTED.`,
+      );
+    }
+  }
+
   /* ────────────────── List ────────────────── */
 
-  async findAll(query: ListQuery): Promise<PaginatedResult<any>> {
+  async findAll(query: ListQuery, user: UserContext): Promise<PaginatedResult<any>> {
     const {
       page = 1,
       limit = 20,
       sortBy = 'request_date',
       sortOrder = 'DESC',
-      departmentId,
       status,
     } = query;
+
+    // Scope enforcement
+    let departmentId = query.departmentId;
+    if (user.role === AppRole.HOD) {
+      departmentId = Number(user.departmentId) || undefined;
+    }
+    if (user.role === AppRole.EMP) {
+      throw new ForbiddenException('Employees cannot list transport requests.');
+    }
 
     const where: any = {};
     if (departmentId) where.department_id = departmentId;
@@ -104,12 +190,14 @@ export class TransportRequestsService {
 
   /* ────────────────── Single request with full details ────────────────── */
 
-  async findById(id: number): Promise<any> {
+  async findById(id: number, user: UserContext): Promise<any> {
     const req = await this.reqRepo.findOne({
       where: { id },
       relations: ['department', 'createdByUser'],
     });
     if (!req) throw new NotFoundException(`Transport request #${id} not found`);
+
+    this.assertRequestAccess(user, req, 'read');
 
     // Load employees
     const reqEmps = await this.reqEmpRepo.find({
@@ -210,14 +298,12 @@ export class TransportRequestsService {
     return saved;
   }
 
-  /* ────────────────── Update (editable until daily lock) ────────────────── */
+  /* ────────────────── Update (DRAFT / ADMIN_REJECTED only) ────────────────── */
 
-  async update(id: number, data: { notes?: string; requestDate?: string; otTime?: string }): Promise<TransportRequest> {
+  async update(id: number, data: { notes?: string; requestDate?: string; otTime?: string }, user: UserContext): Promise<TransportRequest> {
     const req = await this.findOneOrFail(id);
-    const editableStatuses = [RequestStatus.DRAFT, RequestStatus.SUBMITTED, RequestStatus.ADMIN_APPROVED, RequestStatus.ADMIN_REJECTED];
-    if (!editableStatuses.includes(req.status)) {
-      throw new BadRequestException(`Request cannot be edited in status "${req.status}". Editing is only allowed before daily lock.`);
-    }
+    this.assertRequestAccess(user, req, 'write');
+    this.assertEditable(req);
 
     const updateFields: any = {};
     if (data.notes !== undefined) updateFields.notes = data.notes.trim() || null;
@@ -230,8 +316,10 @@ export class TransportRequestsService {
 
   /* ────────────────── Add employees ────────────────── */
 
-  async addEmployees(requestId: number, employeeIds: number[]): Promise<{ message: string; count: number }> {
-    await this.findOneOrFail(requestId);
+  async addEmployees(requestId: number, employeeIds: number[], user: UserContext): Promise<{ message: string; count: number }> {
+    const req = await this.findOneOrFail(requestId);
+    this.assertRequestAccess(user, req, 'write');
+    this.assertEditable(req);
 
     // Deduplicate employee IDs to prevent double entries
     const uniqueIds = [...new Set(employeeIds)];
@@ -250,11 +338,10 @@ export class TransportRequestsService {
 
   /* ────────────────── Remove employees ────────────────── */
 
-  async removeEmployees(requestId: number, employeeIds: number[]): Promise<{ message: string }> {
+  async removeEmployees(requestId: number, employeeIds: number[], user: UserContext): Promise<{ message: string }> {
     const req = await this.findOneOrFail(requestId);
-    if (req.status !== RequestStatus.DRAFT && req.status !== RequestStatus.SUBMITTED) {
-      throw new BadRequestException('Cannot modify employees at this stage');
-    }
+    this.assertRequestAccess(user, req, 'write');
+    this.assertEditable(req);
 
     for (const eid of employeeIds) {
       await this.reqEmpRepo.delete({ request_id: requestId, employee_id: eid });
@@ -467,8 +554,6 @@ export class TransportRequestsService {
       const requestDate = req.request_date;
       const dailyRun = await this.dailyRunRepo.findOne({ where: { run_date: requestDate } });
       if (!dailyRun) return;
-      // Allow sync from any active status (not just SUBMITTED_TO_HR)
-      // because workflow may skip steps or HR may approve directly
       const syncableStatuses = [
         DailyRunStatus.SUBMITTED_TO_HR, DailyRunStatus.READY,
         DailyRunStatus.GROUPED, DailyRunStatus.ASSIGNING,
@@ -476,13 +561,11 @@ export class TransportRequestsService {
       ];
       if (!syncableStatuses.includes(dailyRun.status)) return;
 
-      // Check if any requests for this date are still TA_COMPLETED (pending HR approval)
       const pendingCount = await this.reqRepo.count({
         where: { request_date: requestDate, status: RequestStatus.TA_COMPLETED },
       });
 
       if (pendingCount === 0) {
-        // All requests are approved (or rejected) — mark daily run as HR_APPROVED
         const approvedCount = await this.reqRepo.count({
           where: { request_date: requestDate, status: RequestStatus.HR_APPROVED },
         });
@@ -496,11 +579,6 @@ export class TransportRequestsService {
     }
   }
 
-  /**
-   * Generic DailyRun status sync after dispatch/close transitions.
-   * When all requests for a date have transitioned to targetRequestStatus,
-   * update the DailyRun to targetRunStatus.
-   */
   private async syncDailyRunStatus(
     req: TransportRequest,
     targetRunStatus: DailyRunStatus,
@@ -512,7 +590,6 @@ export class TransportRequestsService {
       const dailyRun = await this.dailyRunRepo.findOne({ where: { run_date: requestDate } });
       if (!dailyRun) return;
 
-      // Check if any requests still in the previous status
       const pendingCount = await this.reqRepo.count({
         where: { request_date: requestDate, status: previousRequestStatus },
       });

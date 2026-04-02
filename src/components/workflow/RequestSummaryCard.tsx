@@ -24,7 +24,7 @@ export default function RequestSummaryCard({ request, onClick, compact }: Props)
           <div className="space-y-2 min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm text-foreground">
-                REQ-{String(request.id).padStart(4, '0')}
+                {String(request.id).padStart(5, '0')}
               </span>
               <StatusBadge status={request.status} />
             </div>

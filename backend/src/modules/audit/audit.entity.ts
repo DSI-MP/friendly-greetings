@@ -76,8 +76,11 @@ export class PasswordResetRequest {
   @Column({ type: 'varchar', length: 255 })
   email: string;
 
-  @Column({ type: 'varchar', length: 10 })
+  @Column({ type: 'varchar', length: 255 })
   otp: string;
+
+  @Column({ type: 'int', default: 0 })
+  otp_attempts: number;
 
   @Column({ type: 'timestamp' })
   expires_at: Date;

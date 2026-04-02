@@ -10,5 +10,5 @@ export class UpdateUserDto {
   @IsOptional() @IsNumber() department_id?: number;
   @IsOptional() @IsNumber() employee_id?: number;
   @IsOptional() @IsBoolean() f2a_enabled?: boolean;
-  @IsOptional() @IsString() password?: string;
+  // password field removed — use dedicated reset endpoint, not generic update
 }

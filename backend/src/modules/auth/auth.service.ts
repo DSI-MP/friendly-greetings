@@ -29,19 +29,22 @@ function maskEmail(email: string): string {
 /** Get today's start in Sri Lanka timezone (GMT+5:30) */
 function getSriLankaDayStart(): Date {
   const now = new Date();
-  // Sri Lanka is UTC+5:30
   const sriLankaOffset = 5.5 * 60 * 60 * 1000;
   const sriLankaNow = new Date(now.getTime() + sriLankaOffset);
-  // Get start of day in SL time
   const slDayStart = new Date(Date.UTC(
     sriLankaNow.getUTCFullYear(),
     sriLankaNow.getUTCMonth(),
     sriLankaNow.getUTCDate(),
     0, 0, 0, 0,
   ));
-  // Convert back to UTC
   return new Date(slDayStart.getTime() - sriLankaOffset);
 }
+
+/** Generic response for password reset to prevent enumeration */
+const GENERIC_RESET_RESPONSE = 'If an account exists with the provided details, a verification code has been sent.';
+
+/** Max OTP verification attempts before lockout */
+const MAX_OTP_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthService {
@@ -246,8 +249,11 @@ export class AuthService {
     if (!valid) throw new BadRequestException('Current password is incorrect');
 
     const hash = await bcrypt.hash(dto.newPassword, 12);
-    await this.userRepo.update(userId, { password_hash: hash });
-    return { message: 'Password changed successfully' };
+    // Invalidate refresh token to force re-login on other devices
+    await this.userRepo.update(userId, { password_hash: hash, refresh_token_hash: null as any });
+
+    this.logger.log(`[ChangePassword] User ${userId} changed password, sessions invalidated`);
+    return { message: 'Password changed successfully. Please log in again on other devices.' };
   }
 
   /* ─── Rate limit check: 2 requests per day (resets at 00:00 GMT+5:30) ─── */
@@ -269,6 +275,9 @@ export class AuthService {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
+    // Hash OTP before storing
+    const otpHash = await bcrypt.hash(otp, 10);
+
     // Invalidate previous requests
     await this.resetRepo.update(
       { user_id: user.id, used: false },
@@ -278,7 +287,8 @@ export class AuthService {
     await this.resetRepo.save({
       user_id: user.id,
       email: user.email,
-      otp,
+      otp: otpHash,
+      otp_attempts: 0,
       expires_at: expiresAt,
     });
 
@@ -288,7 +298,7 @@ export class AuthService {
     try {
       emailSent = await this.channelsService.sendEmail(user.email, 'Password Reset – DSI Transport System', emailHtml, 'password_reset');
     } catch (err) {
-      this.logger.error(`Password reset email error for ${user.email}: ${err.message}`);
+      this.logger.error(`Password reset email error for ${maskEmail(user.email)}: ${err.message}`);
     }
 
     // Try SMS/WhatsApp as fallback channels
@@ -307,12 +317,10 @@ export class AuthService {
       }
     }
 
-    // Always log OTP for troubleshooting (backend only, not exposed to user)
-    this.logger.log(`[PasswordReset] OTP for ${user.email}: ${otp} | emailSent=${emailSent} smsSent=${smsSent} whatsappSent=${whatsappSent}`);
+    this.logger.log(`[PasswordReset] OTP sent for ${maskEmail(user.email)} | emailSent=${emailSent} smsSent=${smsSent} whatsappSent=${whatsappSent}`);
 
-    // If NO channel succeeded, throw so user knows
     if (!emailSent && !smsSent && !whatsappSent) {
-      this.logger.error(`Password reset: ALL channels failed for ${user.email}. OTP=${otp}`);
+      this.logger.error(`Password reset: ALL channels failed for ${maskEmail(user.email)}.`);
       throw new HttpException(
         'Unable to send verification code. Please contact your administrator or try again later.',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -320,92 +328,149 @@ export class AuthService {
     }
   }
 
-  /* ─── Reset by Email ─── */
+  /* ─── Reset by Email (generic response to prevent enumeration) ─── */
   async requestPasswordReset(dto: RequestPasswordResetDto) {
     const user = await this.userRepo.findOne({ where: { email: dto.email.toLowerCase().trim() } });
 
     if (!user) {
-      throw new BadRequestException('No account found with this email address. Please check and try again.');
+      // Return generic response — do not reveal whether email exists
+      this.logger.log(`[PasswordReset] Request for non-existent email (not revealed to client)`);
+      return { message: GENERIC_RESET_RESPONSE };
     }
 
-    await this.checkDailyRateLimit(user.id);
-    await this.sendPasswordResetOtp(user);
+    try {
+      await this.checkDailyRateLimit(user.id);
+      await this.sendPasswordResetOtp(user);
+    } catch (err) {
+      // If rate limited or channel failure, still return generic for enumeration safety
+      // unless it's a rate limit (which is safe to reveal since user already knows their account)
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw err;
+      }
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.SERVICE_UNAVAILABLE) {
+        throw err;
+      }
+      this.logger.error(`[PasswordReset] Error: ${err.message}`);
+    }
 
-    return { message: 'Verification code has been sent to your email.' };
+    return { message: GENERIC_RESET_RESPONSE };
   }
 
-  /* ─── Reset by Employee Number ─── */
+  /* ─── Reset by Employee Number (generic response) ─── */
   async requestPasswordResetByEmpNo(dto: RequestPasswordResetByEmpNoDto) {
     const empNo = dto.empNo.trim();
 
-    // Find employee by emp_no
     const employee = await this.employeeRepo.findOne({ where: { emp_no: empNo } });
-    if (!employee) {
-      throw new BadRequestException('No employee found with this employee number. Please check and try again.');
+    if (!employee || !employee.user_id) {
+      this.logger.log(`[PasswordReset] Request for non-existent emp_no or unlinked (not revealed to client)`);
+      return { message: GENERIC_RESET_RESPONSE };
     }
 
-    if (!employee.user_id) {
-      throw new BadRequestException('This employee number is not linked to a user account. Please contact HR.');
-    }
-
-    // Find linked user
     const user = await this.userRepo.findOne({ where: { id: employee.user_id } });
     if (!user) {
-      throw new BadRequestException('No user account found for this employee. Please contact HR.');
+      return { message: GENERIC_RESET_RESPONSE };
     }
 
-    await this.checkDailyRateLimit(user.id);
-    await this.sendPasswordResetOtp(user);
+    try {
+      await this.checkDailyRateLimit(user.id);
+      await this.sendPasswordResetOtp(user);
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw err;
+      }
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.SERVICE_UNAVAILABLE) {
+        throw err;
+      }
+      this.logger.error(`[PasswordReset] Error: ${err.message}`);
+    }
 
-    return {
-      message: 'Verification code has been sent to your registered email.',
-      maskedEmail: maskEmail(user.email),
-      email: user.email,
-    };
+    return { message: GENERIC_RESET_RESPONSE };
   }
 
+  /* ─── Verify OTP (with brute-force protection) ─── */
   async verifyOtp(dto: VerifyOtpDto) {
+    const email = dto.email.toLowerCase().trim();
+
+    // Find the latest unused reset request for this email
     const resetReq = await this.resetRepo.findOne({
       where: {
-        email: dto.email.toLowerCase().trim(),
-        otp: dto.otp,
+        email,
         used: false,
         expires_at: MoreThan(new Date()),
       },
+      order: { created_at: 'DESC' },
     });
 
     if (!resetReq) {
-      throw new BadRequestException('Invalid or expired OTP');
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    // Check attempt limit
+    if ((resetReq as any).otp_attempts >= MAX_OTP_ATTEMPTS) {
+      await this.resetRepo.update(resetReq.id, { used: true });
+      throw new BadRequestException('Too many invalid attempts. Please request a new verification code.');
+    }
+
+    // Compare hashed OTP
+    const otpValid = await bcrypt.compare(dto.otp, resetReq.otp);
+    if (!otpValid) {
+      // Increment attempt counter
+      await this.resetRepo.increment({ id: resetReq.id }, 'otp_attempts', 1);
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
     return { message: 'OTP verified', valid: true };
   }
 
+  /* ─── Reset Password (with session invalidation) ─── */
   async resetPassword(dto: ResetPasswordDto) {
     if (dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException('Passwords do not match');
     }
 
+    const email = dto.email.toLowerCase().trim();
+
     const resetReq = await this.resetRepo.findOne({
       where: {
-        email: dto.email.toLowerCase().trim(),
-        otp: dto.otp,
+        email,
         used: false,
         expires_at: MoreThan(new Date()),
       },
+      order: { created_at: 'DESC' },
     });
 
     if (!resetReq) {
-      throw new BadRequestException('Invalid or expired OTP');
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+
+    // Check attempt limit
+    if ((resetReq as any).otp_attempts >= MAX_OTP_ATTEMPTS) {
+      await this.resetRepo.update(resetReq.id, { used: true });
+      throw new BadRequestException('Too many invalid attempts. Please request a new verification code.');
+    }
+
+    // Compare hashed OTP
+    const otpValid = await bcrypt.compare(dto.otp, resetReq.otp);
+    if (!otpValid) {
+      await this.resetRepo.increment({ id: resetReq.id }, 'otp_attempts', 1);
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
     const user = await this.userRepo.findOne({ where: { id: resetReq.user_id } });
     if (!user) throw new BadRequestException('User not found');
 
     const hash = await bcrypt.hash(dto.newPassword, 12);
-    await this.userRepo.update(user.id, { password_hash: hash });
+    // Invalidate all sessions by clearing refresh token hash
+    await this.userRepo.update(user.id, { password_hash: hash, refresh_token_hash: null as any });
     await this.resetRepo.update(resetReq.id, { used: true });
 
+    // Invalidate all other unused reset requests for this user
+    await this.resetRepo.update(
+      { user_id: user.id, used: false },
+      { used: true },
+    );
+
+    this.logger.log(`[PasswordReset] Password reset completed for user ${user.id}, sessions invalidated`);
     return { message: 'Password reset successfully' };
   }
 

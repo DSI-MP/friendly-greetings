@@ -27,22 +27,14 @@ export class TransportRequestsController {
 
   @Get()
   findAll(@Query() query: ListTransportRequestsDto, @CurrentUser() user: any) {
-    // HOD can only see their own department
-    const departmentId = user.role === AppRole.HOD
-      ? Number(user.departmentId) || undefined
-      : query.departmentId;
-
-    return this.service.findAll({
-      ...query,
-      departmentId,
-    });
+    return this.service.findAll(query, user);
   }
 
   /* ────────────────── Detail ────────────────── */
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.service.findById(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
+    return this.service.findById(id, user);
   }
 
   /* ────────────────── Create ────────────────── */
@@ -67,22 +59,22 @@ export class TransportRequestsController {
 
   @Patch(':id')
   @Roles(AppRole.HOD, AppRole.ADMIN, AppRole.SUPER_ADMIN)
-  update(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateTransportRequestDto) {
-    return this.service.update(id, data);
+  update(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateTransportRequestDto, @CurrentUser() user: any) {
+    return this.service.update(id, data, user);
   }
 
   /* ────────────────── Employee management ────────────────── */
 
   @Post(':id/add-employees')
   @Roles(AppRole.HOD, AppRole.ADMIN, AppRole.SUPER_ADMIN)
-  addEmployees(@Param('id', ParseIntPipe) id: number, @Body() data: AddEmployeesDto) {
-    return this.service.addEmployees(id, data.employeeIds);
+  addEmployees(@Param('id', ParseIntPipe) id: number, @Body() data: AddEmployeesDto, @CurrentUser() user: any) {
+    return this.service.addEmployees(id, data.employeeIds, user);
   }
 
   @Post(':id/remove-employees')
   @Roles(AppRole.HOD, AppRole.ADMIN, AppRole.SUPER_ADMIN)
-  removeEmployees(@Param('id', ParseIntPipe) id: number, @Body() data: AddEmployeesDto) {
-    return this.service.removeEmployees(id, data.employeeIds);
+  removeEmployees(@Param('id', ParseIntPipe) id: number, @Body() data: AddEmployeesDto, @CurrentUser() user: any) {
+    return this.service.removeEmployees(id, data.employeeIds, user);
   }
 
   /* ────────────────── Workflow transitions ────────────────── */

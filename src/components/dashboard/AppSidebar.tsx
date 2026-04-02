@@ -70,6 +70,7 @@ function getNavSections(role: Role): NavSection[] {
     { titleKey: 'sidebar.allRequests', url: '/requests', icon: FileText },
     { titleKey: 'sidebar.employees', url: '/employees', icon: Users },
     { titleKey: 'sidebar.exportEmployees', url: '/hr/export', icon: Download },
+    { titleKey: 'sidebar.otPlan', url: '/planning/ot-plan', icon: ClipboardList },
     { titleKey: 'sidebar.reports', url: '/reports', icon: FileBarChart },
     { titleKey: 'sidebar.analytics', url: '/analytics', icon: BarChart3 },
   ];

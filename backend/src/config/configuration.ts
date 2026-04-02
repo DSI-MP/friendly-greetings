@@ -12,7 +12,7 @@ export default () => ({
   },
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'change-me',
+    secret: process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'dev-only-change-me'),
     expiresIn: process.env.JWT_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   },
@@ -28,7 +28,9 @@ export default () => ({
   },
 
   swagger: {
-    enabled: process.env.ENABLE_SWAGGER !== 'false',
+    enabled: process.env.NODE_ENV === 'production'
+      ? process.env.ENABLE_SWAGGER === 'true'
+      : process.env.ENABLE_SWAGGER !== 'false',
   },
 
   notifications: {

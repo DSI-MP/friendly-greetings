@@ -8,6 +8,7 @@ import {
   Verify2faDto, Login2faDto,
 } from './dto/auth.dto';
 import { CurrentUser } from '../../common/decorators';
+import { LoginThrottleGuard } from './auth.guard.throttle';
 import { Request } from 'express';
 
 @ApiTags('Auth')
@@ -16,12 +17,14 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     return this.authService.login(dto, req.ip, req.headers['user-agent']);
   }
 
   @Post('verify-2fa-login')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async verify2faLogin(@Body() dto: Login2faDto) {
     return this.authService.verify2faLogin(dto);
@@ -82,24 +85,28 @@ export class AuthController {
   }
 
   @Post('request-password-reset')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
     return this.authService.requestPasswordReset(dto);
   }
 
   @Post('request-password-reset-by-empno')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async requestPasswordResetByEmpNo(@Body() dto: RequestPasswordResetByEmpNoDto) {
     return this.authService.requestPasswordResetByEmpNo(dto);
   }
 
   @Post('verify-otp')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyOtp(dto);
   }
 
   @Post('reset-password')
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);

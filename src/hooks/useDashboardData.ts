@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
 import type { Role } from '@/types/auth';
 import { getApiErrorMessage } from '@/lib/translateError';
@@ -21,6 +21,9 @@ export interface HodDashboard {
 export interface HrDashboard {
   pendingHR: number;
   approved: number;
+  totalToday: number;
+  totalEmployees: number;
+  dispatched: number;
 }
 
 export interface TaDashboard {
@@ -58,18 +61,21 @@ export function useDashboardData(role: Role) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchDashboard = useCallback(() => {
     const endpoint = getEndpoint(role);
     if (!endpoint) {
       setLoading(false);
       return;
     }
 
+    setLoading(true);
     api.get(endpoint)
       .then((res) => setData(res.data?.data ?? res.data))
       .catch((err) => setError(getApiErrorMessage(err, 'apiErrors.failedToLoad')))
       .finally(() => setLoading(false));
   }, [role]);
 
-  return { data, loading, error };
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  return { data, loading, error, refetch: fetchDashboard };
 }

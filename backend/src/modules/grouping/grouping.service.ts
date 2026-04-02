@@ -15,31 +15,29 @@ import { GroupStatus, VehicleType, RequestStatus } from '../../common/enums';
 import { RoutingService } from '../routing/routing.service';
 import { LatLng } from '../routing/routing-provider.interface';
 import { GroupingV3Engine, EmployeeStop, UnresolvedEmployee, VehicleConfig } from './grouping-v3.engine';
+import { GroupingV4Engine, GroupingV4Config, SegmentExplanation } from './grouping-v4.engine';
 
 @Injectable()
 export class GroupingService {
   private readonly logger = new Logger(GroupingService.name);
   private readonly vehicleConfig: VehicleConfig;
 
-  /** Default soft overflow by vehicle type — single source of truth */
-  static readonly TYPE_OVERFLOW_DEFAULTS: Record<string, number> = {
-    VAN: 4,
-    BUS: 10,
-  };
+  /** Runtime overflow defaults — populated from env in constructor */
+  private typeOverflowDefaults: Record<string, number> = { VAN: 0, BUS: 0 };
 
-  /** Get effective capacity for a vehicle: capacity + (vehicle.soft_overflow if set, else type default) */
-  static getEffectiveCapacity(v: { capacity: number; soft_overflow?: number; type?: string }): number {
+  /** Get effective capacity for a vehicle: capacity + (vehicle.soft_overflow if set, else env default) */
+  getEffectiveCapacity(v: { capacity: number; soft_overflow?: number; type?: string }): number {
     const overflow = (v.soft_overflow != null && v.soft_overflow > 0)
       ? v.soft_overflow
-      : (GroupingService.TYPE_OVERFLOW_DEFAULTS[(v.type || '').toUpperCase()] ?? 0);
+      : (this.typeOverflowDefaults[(v.type || '').toUpperCase()] ?? 0);
     return v.capacity + overflow;
   }
 
   /** Get the soft overflow allowance for a vehicle */
-  static getOverflowAllowance(v: { capacity: number; soft_overflow?: number; type?: string }): number {
+  getOverflowAllowance(v: { capacity: number; soft_overflow?: number; type?: string }): number {
     return (v.soft_overflow != null && v.soft_overflow > 0)
       ? v.soft_overflow
-      : (GroupingService.TYPE_OVERFLOW_DEFAULTS[(v.type || '').toUpperCase()] ?? 0);
+      : (this.typeOverflowDefaults[(v.type || '').toUpperCase()] ?? 0);
   }
 
   constructor(
@@ -61,10 +59,15 @@ export class GroupingService {
     this.vehicleConfig = {
       vanCapacity: config.get<number>('vehicle.vanCapacity', 15),
       busCapacity: config.get<number>('vehicle.busCapacity', 52),
-      vanSoftOverflow: config.get<number>('vehicle.vanSoftOverflow', 4),
-      busSoftOverflow: config.get<number>('vehicle.busSoftOverflow', 10),
+      vanSoftOverflow: config.get<number>('vehicle.vanSoftOverflow', 0),
+      busSoftOverflow: config.get<number>('vehicle.busSoftOverflow', 0),
       minVanOccupancy: config.get<number>('vehicle.minVanOccupancy', 5),
       minBusOccupancy: config.get<number>('vehicle.minBusOccupancy', 15),
+    };
+    // Populate overflow defaults from env config (VAN_SOFT_OVERFLOW, BUS_SOFT_OVERFLOW)
+    this.typeOverflowDefaults = {
+      VAN: this.vehicleConfig.vanSoftOverflow,
+      BUS: this.vehicleConfig.busSoftOverflow,
     };
   }
 
@@ -146,8 +149,15 @@ export class GroupingService {
       stops.push({ employeeId: emp.id, placeId: placeId ?? undefined, lat, lng, sourceType: lat === Number(emp.lat) ? 'employee-direct' : 'place-fallback' });
     }
 
-    // ── Run V3 engine ──
-    const engine = new GroupingV3Engine(this.routing, this.vehicleConfig);
+    // ── Run V4 engine (enterprise-grade with natural cut-point splitting) ──
+    const v4Config: Partial<GroupingV4Config> = {
+      maxSegmentDurationSeconds: this.config.get<number>('grouping.maxSegmentDurationSeconds', 5400),
+      maxSegmentStops: this.config.get<number>('grouping.maxSegmentStops', 60),
+      clusterProtectionRadiusKm: this.config.get<number>('grouping.clusterProtectionRadiusKm', 1.5),
+      minCutPointScore: this.config.get<number>('grouping.minCutPointScore', 0.3),
+      maxGroupSize: this.config.get<number>('grouping.maxGroupSize', 80),
+    };
+    const engine = new GroupingV4Engine(this.routing, this.vehicleConfig, v4Config);
     const result = await engine.run(date, stops, unresolvedList);
 
     // Get available vehicles for recommendations
@@ -175,11 +185,12 @@ export class GroupingService {
         requestIds,
         requestCount: requestIds.length,
         departmentCount: departmentIds.length,
-        engine: 'V3',
+        engine: 'V4',
         routingProvider: result.routingSource,
         vehicleConfig: this.vehicleConfig,
+        groupingConfig: v4Config,
       },
-      summary: `V3 Daily run [${date}]: ${result.segments.length} groups, ${result.totalResolved} employees from ${requestIds.length} requests (${departmentIds.length} depts). Routing: ${result.routingSource}. ${result.totalUnresolved} unresolved.`,
+      summary: `V4 Daily run [${date}]: ${result.segments.length} groups, ${result.totalResolved} employees from ${requestIds.length} requests (${departmentIds.length} depts). Routing: ${result.routingSource}. ${result.totalUnresolved} unresolved.`,
     }));
 
     // ── Update DailyRun ──
@@ -231,21 +242,35 @@ export class GroupingService {
         route_geometry: seg.routeGeometry ?? undefined,
         routing_source: seg.routingSource,
         corridor_label: `Direction ${seg.corridorCode}`,
-        cluster_note: `${seg.corridorCode}: ${seg.stops.length} employees, ${seg.stops[0]?.depotDistanceKm.toFixed(1)}–${seg.stops[seg.stops.length - 1]?.depotDistanceKm.toFixed(1)} km from depot [${seg.routingSource}]`,
+        cluster_note: `${seg.corridorCode}: ${seg.stops.length} employees, ${seg.stops[0]?.depotDistanceKm.toFixed(1)}–${seg.stops[seg.stops.length - 1]?.depotDistanceKm.toFixed(1)} km from depot [${seg.routingSource}]${(seg as any).explanation ? ` | quality=${(seg as any).explanation.qualityScore} split=${(seg as any).explanation.splitReason}` : ''}`,
       });
       const group = await this.groupRepo.save(groupEntity);
 
-      // Batch-insert all members for this group
-      const memberEntities = seg.stops.map(stop => this.memberRepo.create({
-        generated_group_id: group.id,
-        employee_id: stop.employeeId,
-        place_id: stop.placeId ?? undefined,
-        lat_snapshot: stop.lat,
-        lng_snapshot: stop.lng,
-        pickup_sequence: stop.stopSequence,
-        depot_distance_km: stop.depotDistanceKm,
-        depot_duration_seconds: stop.depotDurationSeconds != null ? Math.round(stop.depotDurationSeconds) : undefined,
-      }));
+      // Batch-insert members — deduplicate by employee_id to prevent corruption
+      const seenEmpIds = new Set<number>();
+      const memberEntities = seg.stops
+        .filter(stop => {
+          if (seenEmpIds.has(stop.employeeId)) {
+            this.logger.warn(`[Persist] Skipping duplicate employee #${stop.employeeId} in group ${group.group_code}`);
+            return false;
+          }
+          seenEmpIds.add(stop.employeeId);
+          return true;
+        })
+        .map((stop, idx) => this.memberRepo.create({
+          generated_group_id: group.id,
+          employee_id: stop.employeeId,
+          place_id: stop.placeId ?? undefined,
+          lat_snapshot: stop.lat,
+          lng_snapshot: stop.lng,
+          pickup_sequence: idx + 1,
+          depot_distance_km: stop.depotDistanceKm,
+          depot_duration_seconds: stop.depotDurationSeconds != null ? Math.round(stop.depotDurationSeconds) : undefined,
+        }));
+      // Update employee_count to reflect actual unique members
+      if (memberEntities.length !== seg.stops.length) {
+        await this.groupRepo.update(group.id, { employee_count: memberEntities.length });
+      }
       await this.memberRepo.save(memberEntities);
     }
 
@@ -361,11 +386,11 @@ export class GroupingService {
     // Load all active vehicles for capacity truth computation
     const activeVehicles = await this.vehicleRepo.find({ where: { is_active: true } });
     const maxDriverBackedEffCap = Math.max(
-      ...activeVehicles.filter(v => !!v.driver_name).map(v => GroupingService.getEffectiveCapacity(v)),
+      ...activeVehicles.filter(v => !!v.driver_name).map(v => this.getEffectiveCapacity(v)),
       0,
     );
     const maxAnyEffCap = Math.max(
-      ...activeVehicles.map(v => GroupingService.getEffectiveCapacity(v)),
+      ...activeVehicles.map(v => this.getEffectiveCapacity(v)),
       0,
     );
 
@@ -461,9 +486,9 @@ export class GroupingService {
       }
 
       // ── Rule 3: Capacity + overflow validation from env config ──
-      const effCap = GroupingService.getEffectiveCapacity(vehicle);
+      const effCap = this.getEffectiveCapacity(vehicle);
       if (group.employee_count > effCap) {
-        const overflow = GroupingService.getOverflowAllowance(vehicle);
+        const overflow = this.getOverflowAllowance(vehicle);
         throw new BadRequestException(
           `Group size (${group.employee_count}) exceeds allowed capacity (${vehicle.capacity} + ${overflow} overflow = ${effCap}). Overflow limit reached. Split the group or use another vehicle.`,
         );
@@ -712,7 +737,7 @@ export class GroupingService {
     for (const pool of pools) {
       const candidates = pool
         .map(v => {
-          const effCap = GroupingService.getEffectiveCapacity(v);
+          const effCap = this.getEffectiveCapacity(v);
           const overflow = Math.max(0, employeeCount - v.capacity);
           return { vehicle: v, effCap, overflow, fits: employeeCount <= effCap, fitsBase: employeeCount <= v.capacity };
         })
@@ -734,7 +759,7 @@ export class GroupingService {
           vehicleId: v.id,
           overflowNeeded: true,
           overflowCount: best.overflow,
-          reason: `${v.type} ${v.registration_no} fits ${employeeCount} with ${best.overflow} overflow (capacity ${v.capacity} + ${GroupingService.getOverflowAllowance(v)} overflow)${driverNote}`,
+          reason: `${v.type} ${v.registration_no} fits ${employeeCount} with ${best.overflow} overflow (capacity ${v.capacity} + ${this.getOverflowAllowance(v)} overflow)${driverNote}`,
         };
       }
     }
@@ -765,10 +790,10 @@ export class GroupingService {
   ): { targets: number[]; orderedVehicles: Vehicle[] } {
     // Sort vehicles by effective capacity descending — largest vehicle handles the biggest segment
     const sorted = [...vehicles].sort((a, b) =>
-      GroupingService.getEffectiveCapacity(b) - GroupingService.getEffectiveCapacity(a),
+      this.getEffectiveCapacity(b) - this.getEffectiveCapacity(a),
     );
 
-    const effCaps = sorted.map(v => GroupingService.getEffectiveCapacity(v));
+    const effCaps = sorted.map(v => this.getEffectiveCapacity(v));
     const baseCaps = sorted.map(v => v.capacity);
     const totalEffCap = effCaps.reduce((a, b) => a + b, 0);
     const n = sorted.length;
@@ -795,15 +820,16 @@ export class GroupingService {
       let changed = false;
       for (let i = 0; i < n; i++) {
         if (targets[i] > effCaps[i]) {
-          const excess = targets[i] - effCaps[i];
+          let excess = targets[i] - effCaps[i];
           targets[i] = effCaps[i];
-          // Push excess to the next vehicle that has room
+          // Push excess to the next vehicle that has room — decrement remaining
           for (let j = 0; j < n && excess > 0; j++) {
             if (j === i) continue;
             const room = effCaps[j] - targets[j];
             if (room > 0) {
               const take = Math.min(excess, room);
               targets[j] += take;
+              excess -= take;
               changed = true;
             }
           }
@@ -951,7 +977,7 @@ export class GroupingService {
       throw new BadRequestException('Duplicate vehicle IDs in split request. Each vehicle can only be used once.');
     }
 
-    const totalCapacity = validatedVehicles.reduce((s, v) => s + GroupingService.getEffectiveCapacity(v), 0);
+    const totalCapacity = validatedVehicles.reduce((s, v) => s + this.getEffectiveCapacity(v), 0);
     if (members.length > totalCapacity) {
       throw new BadRequestException(
         `Total capacity of selected vehicles (${totalCapacity}) is less than group members (${members.length}). Add more vehicles.`,
@@ -968,6 +994,25 @@ export class GroupingService {
       if (take <= 0) continue;
       allocations.push({ vehicle: orderedVehicles[i], memberSlice: members.slice(offset, offset + take) });
       offset += take;
+    }
+
+    // ── Integrity validation: no duplication, no loss ──
+    const totalAllocated = allocations.reduce((s, a) => s + a.memberSlice.length, 0);
+    if (totalAllocated !== members.length) {
+      throw new BadRequestException(
+        `Split integrity error: allocated ${totalAllocated} members but group has ${members.length}. Aborting.`,
+      );
+    }
+    const allocatedIds = new Set<number>();
+    for (const a of allocations) {
+      for (const m of a.memberSlice) {
+        if (allocatedIds.has(m.employee_id)) {
+          throw new BadRequestException(
+            `Split integrity error: employee #${m.employee_id} appears in multiple segments. Aborting.`,
+          );
+        }
+        allocatedIds.add(m.employee_id);
+      }
     }
 
     const depot = this.routing.getDepot();

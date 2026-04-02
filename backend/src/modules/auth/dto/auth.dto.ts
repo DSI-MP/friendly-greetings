@@ -1,4 +1,5 @@
-import { IsEmail, IsNotEmpty, IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsBoolean, IsOptional, IsString, MinLength, Matches } from 'class-validator';
+import { STRONG_PASSWORD_REGEX, STRONG_PASSWORD_MSG } from '../../employees/dto/employee.dto';
 
 export class LoginDto {
   @IsEmail()
@@ -17,6 +18,8 @@ export class ChangePasswordDto {
   currentPassword: string;
 
   @IsNotEmpty()
+  @MinLength(8)
+  @Matches(STRONG_PASSWORD_REGEX, { message: STRONG_PASSWORD_MSG })
   newPassword: string;
 
   @IsNotEmpty()
@@ -50,6 +53,8 @@ export class ResetPasswordDto {
   otp: string;
 
   @IsNotEmpty()
+  @MinLength(8)
+  @Matches(STRONG_PASSWORD_REGEX, { message: STRONG_PASSWORD_MSG })
   newPassword: string;
 
   @IsNotEmpty()

@@ -17,7 +17,7 @@ export class NotificationsController {
   }
 
   @Post('mark-read')
-  markRead(@Body('ids') ids: number[]) {
-    return this.service.markAsRead(ids);
+  markRead(@Body('ids') ids: number[], @CurrentUser('id') userId: number) {
+    return this.service.markAsRead(ids, userId);
   }
 }

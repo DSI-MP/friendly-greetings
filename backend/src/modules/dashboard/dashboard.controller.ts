@@ -67,9 +67,14 @@ export class DashboardController {
   @Roles(AppRole.HR)
   async hrDashboard() {
     const today = this.today();
-    const pendingHR = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.TA_COMPLETED } });
-    const approved = await this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.HR_APPROVED } });
-    return { pendingHR, approved };
+    const [pendingHR, approved, totalToday, totalEmployees, dispatched] = await Promise.all([
+      this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.TA_COMPLETED } }),
+      this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.HR_APPROVED } }),
+      this.reqRepo.count({ where: { request_date: today as any } }),
+      this.empRepo.count({ where: { is_active: true } }),
+      this.reqRepo.count({ where: { request_date: today as any, status: RequestStatus.DISPATCHED } }),
+    ]);
+    return { pendingHR, approved, totalToday, totalEmployees, dispatched };
   }
 
   @Get('ta')

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -9,6 +9,13 @@ import { Department } from '../departments/department.entity';
 import { SelfRegisterDto, CreateEmployeeDto } from './dto/employee.dto';
 import { PaginationDto, PaginatedResult } from '../../common/dto';
 import { AppRole, AccountStatus, SelfRegRole } from '../../common/enums';
+
+interface UserContext {
+  id?: number;
+  sub?: number;
+  role: AppRole;
+  departmentId?: number;
+}
 
 @Injectable()
 export class EmployeesService {
@@ -80,9 +87,17 @@ export class EmployeesService {
     return employee;
   }
 
-  async update(id: number, data: Partial<Employee>): Promise<Employee> {
+  async update(id: number, data: Partial<Employee>, user?: UserContext): Promise<Employee> {
     const emp = await this.empRepo.findOne({ where: { id } });
     if (!emp) throw new NotFoundException('Employee not found');
+
+    // HOD can only update employees in their own department
+    if (user && user.role === AppRole.HOD) {
+      const userDeptId = Number(user.departmentId);
+      if (!userDeptId || emp.department_id !== userDeptId) {
+        throw new ForbiddenException('You can only update employees in your own department.');
+      }
+    }
 
     // emp_no is immutable after creation
     delete (data as any).emp_no;

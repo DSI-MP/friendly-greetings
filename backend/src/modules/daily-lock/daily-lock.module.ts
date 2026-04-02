@@ -5,9 +5,10 @@ import { DailyRun } from './daily-run.entity';
 import { DailyLockController } from './daily-lock.controller';
 import { DailyLockService } from './daily-lock.service';
 import { TransportRequest, TransportRequestEmployee } from '../transport-requests/transport-request.entity';
+import { GeneratedRouteGroup, GeneratedRouteGroupMember } from '../grouping/grouping.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DailyLock, DailyRun, TransportRequest, TransportRequestEmployee])],
+  imports: [TypeOrmModule.forFeature([DailyLock, DailyRun, TransportRequest, TransportRequestEmployee, GeneratedRouteGroup, GeneratedRouteGroupMember])],
   controllers: [DailyLockController],
   providers: [DailyLockService],
   exports: [DailyLockService],

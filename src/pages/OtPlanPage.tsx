@@ -269,13 +269,10 @@ ${html}
                     <div className="sig-note">"This confirms that the provided information matches the system data."</div>
                   </div>
                 </div>
-                <div className="disclaimer">
-                  This document remains valid even without the Chief System Administrator signature. If this signature is missing, the system is not responsible for any mismatch.
-                </div>
               </div>
 
               <div className="footer">
-                <span>Created by P.C.U Technical Team / W.O. Sandaruwan Jayalath</span>
+                <span>Transport Management System</span>
                 <span>Final OT Plan — {date}</span>
               </div>
             </div>

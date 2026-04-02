@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -25,6 +26,19 @@ async function bootstrap() {
     const allowCors = config.get<boolean>('cors.allow', true);
     const corsOrigin = config.get<string>('cors.origin', '*');
     const enableSwagger = config.get<boolean>('swagger.enabled', true);
+    const nodeEnv = config.get<string>('nodeEnv', 'development');
+    const isProduction = nodeEnv === 'production';
+
+    // ── JWT secret validation ──
+    const jwtSecret = config.get<string>('jwt.secret', '');
+    if (!jwtSecret || jwtSecret === '') {
+      logger.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start in production.');
+      process.exit(1);
+    }
+    if (isProduction && jwtSecret === 'dev-only-change-me') {
+      logger.error('FATAL: JWT_SECRET is using the development fallback in production. Set a strong secret.');
+      process.exit(1);
+    }
 
     app.setGlobalPrefix(apiPrefix);
 
@@ -32,16 +46,32 @@ async function bootstrap() {
     const expressApp = app.getHttpAdapter().getInstance();
     expressApp.set('etag', false);
 
-    // Security headers + no-cache for API routes
-    app.use((_req: any, res: any, next: any) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('X-Frame-Options', 'DENY');
-      res.setHeader('X-XSS-Protection', '1; mode=block');
-      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-      res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    // ── Helmet security headers ──
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+            fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+            imgSrc: ["'self'", 'data:', 'blob:', 'https://*.amazonaws.com', 'https://*.tile.openstreetmap.org'],
+            connectSrc: ["'self'", 'https://*.amazonaws.com', 'https://*.geo.amazonaws.com', 'https://*.execute-api.amazonaws.com'],
+            workerSrc: ["'self'", 'blob:'],
+            childSrc: ["'self'", 'blob:'],
+            frameSrc: ["'none'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+          },
+        },
+        crossOriginEmbedderPolicy: false, // needed for map tiles
+        crossOriginResourcePolicy: { policy: 'cross-origin' }, // needed for map tiles
+      }),
+    );
 
-      // Prevent caching of API responses (authenticated dynamic data)
+    // No-cache for API routes (keep existing behavior)
+    app.use((_req: any, res: any, next: any) => {
       if (_req.url?.startsWith(apiPrefix)) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, private');
         res.setHeader('Pragma', 'no-cache');
@@ -49,7 +79,6 @@ async function bootstrap() {
         res.setHeader('Surrogate-Control', 'no-store');
         res.setHeader('Vary', 'Authorization');
       }
-
       next();
     });
 
@@ -62,15 +91,24 @@ async function bootstrap() {
       }),
     );
 
+    // ── CORS hardening ──
     if (allowCors) {
+      if (isProduction && corsOrigin === '*') {
+        logger.warn('CORS_ORIGIN is "*" in production. Set explicit origins via CORS_ORIGIN env var.');
+      }
+      const origin = isProduction
+        ? (corsOrigin === '*' ? false : corsOrigin.split(',').map(o => o.trim()))
+        : (corsOrigin === '*' ? true : corsOrigin.split(',').map(o => o.trim()));
+
       app.enableCors({
-        origin: corsOrigin === '*' ? true : corsOrigin.split(','),
+        origin,
         credentials: true,
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
       });
     }
 
+    // ── Swagger (disabled in production by default) ──
     if (enableSwagger) {
       const swaggerConfig = new DocumentBuilder()
         .setTitle('Transport Management API')
@@ -81,6 +119,8 @@ async function bootstrap() {
       const document = SwaggerModule.createDocument(app, swaggerConfig);
       SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
       logger.log(`Swagger docs available at ${apiPrefix}/docs`);
+    } else {
+      logger.log('Swagger is disabled (production default). Set ENABLE_SWAGGER=true to enable.');
     }
 
     const frontendPath = join(__dirname, '..', 'frontend-dist');
@@ -101,7 +141,7 @@ async function bootstrap() {
     const server = await app.listen(port, '0.0.0.0');
     // 10 min timeout for long-running requests like bulk upload
     server.setTimeout(10 * 60 * 1000);
-    logger.log(`Application running on 0.0.0.0:${port} with prefix ${apiPrefix} (timeout: 10min)`);
+    logger.log(`Application running on 0.0.0.0:${port} with prefix ${apiPrefix} (timeout: 10min, env: ${nodeEnv})`);
   } catch (error) {
     const logger = new Logger('Bootstrap');
     logger.error(`Failed to start application: ${error.message}`, error.stack);

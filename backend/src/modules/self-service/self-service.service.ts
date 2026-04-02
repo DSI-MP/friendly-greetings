@@ -209,9 +209,12 @@ export class SelfServiceService {
       }
     }
 
+    // Resolve human-readable route name: "DSI to <farthest destination>"
+    const routeDisplayName = await this.resolveRouteDisplayName(group);
+
     return {
       request_date: date,
-      route_name: group?.corridor_label || null,
+      route_name: routeDisplayName,
       group_code: group?.group_code || null,
       registration_no: vehicle?.registration_no || null,
       vehicle_type: vehicle?.type || null,
@@ -264,9 +267,12 @@ export class SelfServiceService {
         }
       }
 
+      // Resolve human-readable route name
+      const routeDisplayName = await this.resolveRouteDisplayName(group);
+
       trips.push({
         request_date: typeof re.request_date === 'string' ? re.request_date : new Date(re.request_date).toISOString().split('T')[0],
-        route_name: group?.corridor_label || null,
+        route_name: routeDisplayName,
         group_code: group?.group_code || null,
         registration_no: vehicle?.registration_no || null,
         vehicle_type: vehicle?.type || null,
@@ -279,5 +285,45 @@ export class SelfServiceService {
     }
 
     return trips;
+  }
+
+  /**
+   * Resolve a human-readable route name for employee-facing views.
+   * Format: "DSI to <farthest destination place name>"
+   * Falls back gracefully if no place data is available.
+   */
+  private async resolveRouteDisplayName(group: GeneratedRouteGroup | null): Promise<string | null> {
+    if (!group) return null;
+
+    try {
+      // Get group members ordered by pickup sequence (farthest = last)
+      const members = await this.memberRepo.find({
+        where: { generated_group_id: group.id },
+        order: { pickup_sequence: 'DESC' },
+      });
+
+      if (members.length > 0) {
+        // Find farthest member with a place_id
+        for (const member of members) {
+          if (member.place_id) {
+            const place = await this.placeRepo.findOne({ where: { id: member.place_id } });
+            if (place?.title) {
+              return `DSI to ${place.title}`;
+            }
+          }
+        }
+      }
+
+      // Fallback: try to extract a meaningful name from corridor_label
+      const label = group.corridor_label || '';
+      // If it looks like "Direction C10", don't show it
+      if (/^Direction\s+C\d+/i.test(label) || !label || label === 'Route') {
+        return group.group_code ? `DSI Route ${group.group_code}` : 'DSI Transport';
+      }
+
+      return `DSI to ${label}`;
+    } catch {
+      return group.corridor_label || null;
+    }
   }
 }

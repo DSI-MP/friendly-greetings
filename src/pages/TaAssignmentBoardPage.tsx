@@ -16,22 +16,17 @@ import {
 } from 'lucide-react';
 
 /**
- * Effective capacity: capacity + overflow allowance.
- * Uses vehicle.soft_overflow if set > 0, else type defaults (VAN=4, BUS=10).
+ * Effective capacity: capacity + vehicle.soft_overflow (if set > 0, else 0).
+ * Overflow values are configured per-vehicle in the database.
  * Must match GroupingService.getEffectiveCapacity on backend.
  */
-const TYPE_OVERFLOW_DEFAULTS: Record<string, number> = { VAN: 4, BUS: 10 };
 function getEffectiveCapacity(v: { capacity: number; soft_overflow?: number; type?: string }): number {
-  const overflow = (v.soft_overflow != null && v.soft_overflow > 0)
-    ? v.soft_overflow
-    : (TYPE_OVERFLOW_DEFAULTS[(v.type || '').toUpperCase()] ?? 0);
+  const overflow = (v.soft_overflow != null && v.soft_overflow > 0) ? v.soft_overflow : 0;
   return v.capacity + overflow;
 }
 
 function getOverflow(v: { capacity: number; soft_overflow?: number; type?: string }): number {
-  return (v.soft_overflow != null && v.soft_overflow > 0)
-    ? v.soft_overflow
-    : (TYPE_OVERFLOW_DEFAULTS[(v.type || '').toUpperCase()] ?? 0);
+  return (v.soft_overflow != null && v.soft_overflow > 0) ? v.soft_overflow : 0;
 }
 
 interface VehicleData {
@@ -123,19 +118,20 @@ function computeSplitPreview(
     }
   }
 
-  // Validate & fix overflows
+  // Validate & fix overflows — decrement remaining excess properly
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
     for (let i = 0; i < n; i++) {
       if (targets[i] > effCaps[i]) {
-        const excess = targets[i] - effCaps[i];
+        let excess = targets[i] - effCaps[i];
         targets[i] = effCaps[i];
-        for (let j = 0; j < n; j++) {
+        for (let j = 0; j < n && excess > 0; j++) {
           if (j === i) continue;
           const room = effCaps[j] - targets[j];
           if (room > 0) {
             const take = Math.min(excess, room);
             targets[j] += take;
+            excess -= take;
             changed = true;
           }
         }

@@ -64,11 +64,15 @@ export class UsersService {
   }
 
   async adminResetPassword(id: number, newPassword: string): Promise<{ message: string }> {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
     const hash = await bcrypt.hash(newPassword, 12);
-    await this.repo.update(id, { password_hash: hash });
-    return { message: 'Password reset by admin' };
+    // Invalidate sessions on admin reset
+    await this.repo.update(id, { password_hash: hash, refresh_token_hash: null as any });
+    return { message: 'Password reset by admin. User must log in again.' };
   }
 
   async delete(id: number): Promise<{ message: string }> {
