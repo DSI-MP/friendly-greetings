@@ -146,16 +146,30 @@ export class GroupingService {
         continue;
       }
 
-      stops.push({ employeeId: emp.id, placeId: placeId ?? undefined, lat, lng, sourceType: lat === Number(emp.lat) ? 'employee-direct' : 'place-fallback' });
+      stops.push({
+        employeeId: emp.id,
+        placeId: placeId ?? undefined,
+        placeName: placeId ? placeMap.get(placeId)?.title : undefined,
+        lat, lng,
+        sourceType: lat === Number(emp.lat) ? 'employee-direct' : 'place-fallback',
+      });
     }
 
-    // ── Run V4 engine (enterprise-grade with natural cut-point splitting) ──
+    // ── Run V4 engine (enterprise-grade with duration-aware splitting) ──
+    const maxSegDurMin = this.config.get<number>('grouping.maxSegmentDurationMinutes', 90);
+    const softMaxMin = this.config.get<number>('grouping.softMaxSegmentDurationMinutes', 75);
+    const hardMaxMin = this.config.get<number>('grouping.hardMaxSegmentDurationMinutes', 120);
     const v4Config: Partial<GroupingV4Config> = {
-      maxSegmentDurationSeconds: this.config.get<number>('grouping.maxSegmentDurationSeconds', 5400),
-      maxSegmentStops: this.config.get<number>('grouping.maxSegmentStops', 60),
+      maxSegmentDurationSeconds: maxSegDurMin * 60,
+      softMaxSegmentDurationSeconds: softMaxMin * 60,
+      hardMaxSegmentDurationSeconds: hardMaxMin * 60,
+      maxSegmentStops: this.config.get<number>('grouping.maxStopsPerSegment', 45),
       clusterProtectionRadiusKm: this.config.get<number>('grouping.clusterProtectionRadiusKm', 1.5),
-      minCutPointScore: this.config.get<number>('grouping.minCutPointScore', 0.3),
-      maxGroupSize: this.config.get<number>('grouping.maxGroupSize', 80),
+      minCutPointScore: this.config.get<number>('grouping.minCutPointScore', 0.25),
+      maxGroupSize: this.config.get<number>('grouping.largeBucketThreshold', 50),
+      largeBucketThreshold: this.config.get<number>('grouping.largeBucketThreshold', 50),
+      maxCorridorSubgroupSize: this.config.get<number>('grouping.maxCorridorSubgroupSize', 40),
+      maxRebalanceIterations: this.config.get<number>('grouping.maxRebalanceIterations', 5),
     };
     const engine = new GroupingV4Engine(this.routing, this.vehicleConfig, v4Config);
     const result = await engine.run(date, stops, unresolvedList);
