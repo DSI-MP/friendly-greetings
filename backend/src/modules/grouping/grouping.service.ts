@@ -255,7 +255,7 @@ export class GroupingService {
         estimated_duration_seconds: seg.estimatedDurationSeconds != null ? Math.round(seg.estimatedDurationSeconds) : undefined,
         route_geometry: seg.routeGeometry ?? undefined,
         routing_source: seg.routingSource,
-        corridor_label: `Direction ${seg.corridorCode}`,
+        corridor_label: (seg as any).routeName || `Direction ${seg.corridorCode}`,
         cluster_note: `${seg.corridorCode}: ${seg.stops.length} employees, ${seg.stops[0]?.depotDistanceKm.toFixed(1)}–${seg.stops[seg.stops.length - 1]?.depotDistanceKm.toFixed(1)} km from depot [${seg.routingSource}]${(seg as any).explanation ? ` | quality=${(seg as any).explanation.qualityScore} split=${(seg as any).explanation.splitReason}` : ''}`,
       });
       const group = await this.groupRepo.save(groupEntity);
